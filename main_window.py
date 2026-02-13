@@ -11,6 +11,8 @@ from PySide2.QtCore import Qt
 from flowchart import FlowchartView
 from preview import GeometryPreview
 from panels import PropertiesPanel, ParametersPanel, ToolboxPanel
+from models import PointNode, LinkNode, ShapeNode, DecisionNode
+from flowchart import FlowchartNodeItem
 
 
 class ComponentDesigner(QMainWindow):
@@ -132,7 +134,7 @@ class ComponentDesigner(QMainWindow):
         
         # Status bar
         self.statusBar().showMessage("Ready")
-        
+
     def create_actions(self):
         """Create menu and toolbar actions"""
         # File actions
@@ -151,9 +153,6 @@ class ComponentDesigner(QMainWindow):
         self.save_as_action = QAction("Save As...", self)
         self.save_as_action.setShortcut("Ctrl+Shift+S")
         self.save_as_action.triggered.connect(self.save_file_as)
-        
-        self.export_action = QAction("Export as PKT...", self)
-        self.export_action.triggered.connect(self.export_pkt)
         
         self.exit_action = QAction("Exit", self)
         self.exit_action.triggered.connect(self.close)
@@ -177,8 +176,6 @@ class ComponentDesigner(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
-        file_menu.addSeparator()
-        file_menu.addAction(self.export_action)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
         
@@ -261,9 +258,9 @@ class ComponentDesigner(QMainWindow):
             self.statusBar().showMessage("New component created")
             
     def open_file(self):
-        """Open existing PKT file"""
+        """Open existing JSON file"""
         filename, _ = QFileDialog.getOpenFileName(
-            self, "Open PKT File", "", "PKT Files (*.pkt);;JSON Files (*.json)"
+            self, "Open JSON File", "", "JSON Files (*.json)"
         )
         if filename:
             self.load_file(filename)
@@ -293,9 +290,52 @@ class ComponentDesigner(QMainWindow):
                 'name': self.parameters.component_name.text(),
                 'description': self.parameters.component_desc.toPlainText()
             },
-            'nodes': {node_id: node.to_dict() for node_id, node in self.flowchart.scene.nodes.items()},
-            'connections': self.flowchart.scene.connections
+            'nodes': [],
+            'connections': []
         }
+        
+        # Save nodes in order
+        for node_id, node in self.flowchart.scene.nodes.items():
+            node_data = {
+                'id': node.id,
+                'type': node.type,
+                'name': node.name,
+                'x': node.x,
+                'y': node.y
+            }
+            
+            # Add type-specific properties
+            if isinstance(node, PointNode):
+                node_data['geometry_type'] = node.geometry_type.value
+                node_data['offset'] = node.offset
+                node_data['elevation'] = node.elevation
+                node_data['delta_x'] = node.delta_x
+                node_data['delta_y'] = node.delta_y
+                node_data['slope'] = node.slope
+                node_data['from_point'] = node.from_point
+                node_data['point_codes'] = node.point_codes
+                node_data['add_link_to_from'] = node.add_link_to_from
+                
+            elif isinstance(node, LinkNode):
+                node_data['link_type'] = node.link_type.value
+                node_data['start_point'] = node.start_point
+                node_data['end_point'] = node.end_point
+                node_data['link_codes'] = node.link_codes
+                node_data['material'] = node.material
+                node_data['thickness'] = node.thickness
+                
+            elif isinstance(node, ShapeNode):
+                node_data['shape_codes'] = node.shape_codes
+                node_data['links'] = node.links
+                node_data['material'] = node.material
+                
+            elif isinstance(node, DecisionNode):
+                node_data['condition'] = node.condition
+                
+            data['nodes'].append(node_data)
+        
+        # Save connections
+        data['connections'] = self.flowchart.scene.connections
         
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -313,35 +353,119 @@ class ComponentDesigner(QMainWindow):
             if 'component_settings' in data:
                 self.parameters.component_name.setText(data['component_settings'].get('name', ''))
                 self.parameters.component_desc.setPlainText(data['component_settings'].get('description', ''))
-            elif 'packet_settings' in data:  # Backward compatibility
-                self.parameters.component_name.setText(data['packet_settings'].get('name', ''))
-                self.parameters.component_desc.setPlainText(data['packet_settings'].get('description', ''))
                 
-            # Load nodes
+            # Clear existing flowchart
             self.flowchart.scene.clear()
             self.flowchart.scene.nodes.clear()
+            self.flowchart.scene.connections.clear()
+            self.flowchart.scene.arrows.clear()
+            self.flowchart.scene.last_added_node = None
+            self.flowchart.node_counter = 0
             
-            # TODO: Reconstruct nodes from data
+            # Load nodes
+            if 'nodes' in data:
+                node_map = {}  # Map old IDs to new node objects
+                
+                for node_data in data['nodes']:
+                    node = None
+                    node_type = node_data.get('type')
+                    
+                    if node_type == 'Point':
+                        from models import PointGeometryType
+                        node = PointNode(node_data['id'], node_data['name'])
+                        # Load geometry type
+                        geo_type_str = node_data.get('geometry_type', 'Offset and Elevation')
+                        for gt in PointGeometryType:
+                            if gt.value == geo_type_str:
+                                node.geometry_type = gt
+                                break
+                        node.offset = node_data.get('offset', 0.0)
+                        node.elevation = node_data.get('elevation', 0.0)
+                        node.delta_x = node_data.get('delta_x', 0.0)
+                        node.delta_y = node_data.get('delta_y', 0.0)
+                        node.slope = node_data.get('slope', 0.0)
+                        node.from_point = node_data.get('from_point')
+                        node.point_codes = node_data.get('point_codes', [])
+                        node.add_link_to_from = node_data.get('add_link_to_from', True)
+                        
+                    elif node_type == 'Link':
+                        from models import LinkType
+                        node = LinkNode(node_data['id'], node_data['name'])
+                        # Load link type
+                        link_type_str = node_data.get('link_type', 'Line')
+                        for lt in LinkType:
+                            if lt.value == link_type_str:
+                                node.link_type = lt
+                                break
+                        node.start_point = node_data.get('start_point')
+                        node.end_point = node_data.get('end_point')
+                        node.link_codes = node_data.get('link_codes', [])
+                        node.material = node_data.get('material', 'Asphalt')
+                        node.thickness = node_data.get('thickness', 0.0)
+                        
+                    elif node_type == 'Shape':
+                        node = ShapeNode(node_data['id'], node_data['name'])
+                        node.shape_codes = node_data.get('shape_codes', [])
+                        node.links = node_data.get('links', [])
+                        node.material = node_data.get('material', 'Asphalt')
+                        
+                    elif node_type == 'Decision':
+                        node = DecisionNode(node_data['id'], node_data['name'])
+                        node.condition = node_data.get('condition', '')
+                        
+                    elif node_type == 'Start':
+                        from models import FlowchartNode
+                        node = FlowchartNode(node_data['id'], node_type, node_data['name'])
+                        
+                    else:
+                        # Generic node for other types
+                        from models import FlowchartNode
+                        node = FlowchartNode(node_data['id'], node_type, node_data['name'])
+                    
+                    if node:
+                        x = node_data.get('x', 0)
+                        y = node_data.get('y', 0)
+                        
+                        # Add node without auto-connecting
+                        self.flowchart.scene.nodes[node.id] = node
+                        node.x = x
+                        node.y = y
+                        node_item = FlowchartNodeItem(node, x, y)
+                        self.flowchart.scene.addItem(node_item)
+                        
+                        node_map[node.id] = node
+                        
+                        # Update counter
+                        if node.id.startswith('N'):
+                            try:
+                                num = int(node.id[1:])
+                                if num > self.flowchart.node_counter:
+                                    self.flowchart.node_counter = num
+                            except:
+                                pass
+            
+            # Load connections
+            if 'connections' in data:
+                for conn in data['connections']:
+                    from_id = conn['from']
+                    to_id = conn['to']
+                    
+                    if from_id in node_map and to_id in node_map:
+                        from_node = node_map[from_id]
+                        to_node = node_map[to_id]
+                        self.flowchart.scene.connect_nodes(from_node, to_node)
             
             self.current_file = filename
             self.modified = False
             self.statusBar().showMessage(f"Loaded: {filename}")
             
+            # Update preview
+            self.update_preview()
+            
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load file: {str(e)}")
-            
-    def export_pkt(self):
-        """Export to PKT format"""
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "Export as PKT", "", "PKT Files (*.pkt)"
-        )
-        if filename:
-            if not filename.endswith('.pkt'):
-                filename += '.pkt'
-            # TODO: Implement actual PKT export
-            QMessageBox.information(self, "Information", 
-                                   "PKT export functionality is under development.\n"
-                                   "Please use JSON format for now.")
+            import traceback
+            traceback.print_exc()
             
     def check_save_changes(self):
         """Check if changes need to be saved"""
