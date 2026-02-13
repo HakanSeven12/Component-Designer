@@ -263,6 +263,91 @@ class PropertiesPanel(QWidget):
         # Decision widgets
         self.condition_edit.blockSignals(block)
 
+    def on_name_changed(self, text):
+        """Handle name change"""
+        if self.current_node:
+            self.current_node.name = text
+            self.update_flowchart_display()
+            self.update_preview()
+            
+    def on_geometry_type_changed(self, index):
+        """Handle geometry type change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.geometry_type = self.geometry_type.currentData()
+            self.update_preview()
+            
+    def on_offset_changed(self, value):
+        """Handle offset change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.offset = value
+            self.update_preview()
+            
+    def on_elevation_changed(self, value):
+        """Handle elevation change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.elevation = value
+            self.update_preview()
+            
+    def on_delta_x_changed(self, value):
+        """Handle delta X change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.delta_x = value
+            self.update_preview()
+            
+    def on_delta_y_changed(self, value):
+        """Handle delta Y change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.delta_y = value
+            self.update_preview()
+            
+    def on_slope_changed(self, value):
+        """Handle slope change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.slope = value
+            self.update_preview()
+            
+    def on_from_point_changed(self, index):
+        """Handle from point change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.from_point = self.from_point_combo.currentData()
+            self.update_preview()
+            
+    def on_add_link_changed(self, state):
+        """Handle add link checkbox change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.add_link_to_from = (state == Qt.Checked)
+            self.update_preview()
+            
+    def on_link_type_changed(self, index):
+        """Handle link type change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.link_type = self.link_type_combo.currentData()
+            self.update_preview()
+            
+    def on_start_point_changed(self, index):
+        """Handle start point change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.start_point = self.start_point_combo.currentData()
+            self.update_preview()
+            
+    def on_end_point_changed(self, index):
+        """Handle end point change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.end_point = self.end_point_combo.currentData()
+            self.update_preview()
+            
+    def on_material_changed(self, text):
+        """Handle material change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.material = text
+            self.update_preview()
+            
+    def on_thickness_changed(self, value):
+        """Handle thickness change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.thickness = value
+            self.update_preview()
+            
     def on_point_codes_changed(self, text):
         """Handle point codes change"""
         if self.current_node and isinstance(self.current_node, PointNode):
@@ -270,6 +355,7 @@ class PropertiesPanel(QWidget):
             import re
             codes = re.findall(r'"([^"]*)"', text)
             self.current_node.point_codes = codes
+            self.update_preview()
             
     def on_link_codes_changed(self, text):
         """Handle link codes change"""
@@ -278,6 +364,7 @@ class PropertiesPanel(QWidget):
             import re
             codes = re.findall(r'"([^"]*)"', text)
             self.current_node.link_codes = codes
+            self.update_preview()
             
     def on_shape_codes_changed(self, text):
         """Handle shape codes change"""
@@ -286,82 +373,13 @@ class PropertiesPanel(QWidget):
             import re
             codes = re.findall(r'"([^"]*)"', text)
             self.current_node.shape_codes = codes
+            self.update_preview()
             
     def on_condition_changed(self):
         """Handle condition change"""
         if self.current_node and isinstance(self.current_node, DecisionNode):
             self.current_node.condition = self.condition_edit.toPlainText()
-            
-    def on_name_changed(self, text):
-        """Handle name change"""
-        if self.current_node:
-            self.current_node.name = text
-            self.update_flowchart_display()
-            
-    def on_geometry_type_changed(self, index):
-        """Handle geometry type change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.geometry_type = self.geometry_type.currentData()
-            
-    def on_offset_changed(self, value):
-        """Handle offset change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.offset = value
-            
-    def on_elevation_changed(self, value):
-        """Handle elevation change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.elevation = value
-            
-    def on_delta_x_changed(self, value):
-        """Handle delta X change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.delta_x = value
-            
-    def on_delta_y_changed(self, value):
-        """Handle delta Y change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.delta_y = value
-            
-    def on_slope_changed(self, value):
-        """Handle slope change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.slope = value
-            
-    def on_from_point_changed(self, index):
-        """Handle from point change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.from_point = self.from_point_combo.currentData()
-            
-    def on_add_link_changed(self, state):
-        """Handle add link checkbox change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.add_link_to_from = (state == Qt.Checked)
-            
-    def on_link_type_changed(self, index):
-        """Handle link type change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.link_type = self.link_type_combo.currentData()
-            
-    def on_start_point_changed(self, index):
-        """Handle start point change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.start_point = self.start_point_combo.currentData()
-            
-    def on_end_point_changed(self, index):
-        """Handle end point change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.end_point = self.end_point_combo.currentData()
-            
-    def on_material_changed(self, text):
-        """Handle material change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.material = text
-            
-    def on_thickness_changed(self, value):
-        """Handle thickness change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.thickness = value
+            self.update_preview()
             
     def update_flowchart_display(self):
         """Update flowchart visual display"""
@@ -516,6 +534,16 @@ class PropertiesPanel(QWidget):
                 return widget.flowchart.scene
             widget = widget.parentWidget()
         return None
+    
+    def update_preview(self):
+        """Trigger preview update in main window"""
+        # Get main window
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, 'update_preview'):
+                widget.update_preview()
+                break
+            widget = widget.parentWidget()
     
 
 class ParametersPanel(QWidget):

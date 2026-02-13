@@ -211,6 +211,7 @@ class ComponentDesigner(QMainWindow):
         self.show_codes_check.stateChanged.connect(self.toggle_codes)
         self.show_comments_check.stateChanged.connect(self.toggle_comments)
         self.flowchart.scene.node_selected.connect(self.on_flowchart_node_selected)
+        self.flowchart.scene.preview_update_requested.connect(self.update_preview)
         
     def on_flowchart_node_selected(self, node):
         """Handle flowchart node selection"""

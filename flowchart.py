@@ -103,6 +103,8 @@ class FlowchartNodeItem(QGraphicsRectItem):
             # Update connected arrows
             if self.scene():
                 self.scene().update_arrows()
+                # Trigger preview update
+                self.scene().request_preview_update()
         
         elif change == QGraphicsItem.ItemSelectedChange:
             # Update visual style based on selection
@@ -158,14 +160,19 @@ class FlowchartScene(QGraphicsScene):
     """Custom scene for flowchart editing"""
     
     node_selected = Signal(object)
+    preview_update_requested = Signal()  # Add new signal
     
     def __init__(self):
         super().__init__()
         self.nodes = {}
         self.connections = []
-        self.arrows = []  # Store arrow items
+        self.arrows = []
         self.selected_node = None
-        self.last_added_node = None  # Track last added node
+        self.last_added_node = None
+        
+    def request_preview_update(self):
+        """Request preview update"""
+        self.preview_update_requested.emit()
         
     def add_flowchart_node(self, node, x, y):
         """Add a node to the flowchart"""
