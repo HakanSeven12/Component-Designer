@@ -3,7 +3,9 @@ Flowchart Module for Component Designer
 Contains flowchart scene, view, and draggable node items
 """
 
-from PySide2.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsTextItem, QGraphicsItem, QApplication, QGraphicsLineItem, QGraphicsPolygonItem
+from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsRectItem, 
+                               QGraphicsTextItem, QGraphicsItem, QGraphicsLineItem, 
+                               QGraphicsPolygonItem, QStyle)
 from PySide2.QtCore import Qt, Signal, QPointF, QLineF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF, QMouseEvent
 from models import PointNode, LinkNode, ShapeNode, DecisionNode, FlowchartNode
@@ -61,7 +63,7 @@ class ConnectionArrow(QGraphicsLineItem):
 
 class FlowchartNodeItem(QGraphicsRectItem):
     """Draggable flowchart node item"""
-    
+
     def __init__(self, node, x, y, parent=None):
         super().__init__(0, 0, 120, 60, parent)
         self.node = node
@@ -70,10 +72,15 @@ class FlowchartNodeItem(QGraphicsRectItem):
                      QGraphicsItem.ItemIsSelectable |
                      QGraphicsItem.ItemSendsGeometryChanges)
         
-        # Visual styling
-        self.setPen(QPen(QColor(0, 0, 0), 2))
-        self.setBrush(QBrush(QColor(200, 220, 255)))
+        # Set cache mode to avoid drawing artifacts
+        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         
+        # Visual styling
+        self.normal_pen = QPen(QColor(0, 0, 0), 2)
+        self.selected_pen = QPen(QColor(255, 120, 0), 3)
+        self.normal_brush = QBrush(QColor(200, 220, 255))
+        self.selected_brush = QBrush(QColor(255, 230, 180))
+
         # Add text label - use relative positioning within the rectangle
         self.text = QGraphicsTextItem(f"{node.type}\n{node.name}", self)
         # Center the text within the rectangle
@@ -84,7 +91,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
         
         # Store node reference
         self.setData(0, node)
-
+        
     def itemChange(self, change, value):
         """Handle item changes - update node position and arrows"""
         if change == QGraphicsItem.ItemPositionChange:
@@ -96,8 +103,43 @@ class FlowchartNodeItem(QGraphicsRectItem):
             # Update connected arrows
             if self.scene():
                 self.scene().update_arrows()
+        
+        elif change == QGraphicsItem.ItemSelectedChange:
+            # Update visual style based on selection
+            if value:  # Being selected
+                self.setPen(self.selected_pen)
+                self.setBrush(self.selected_brush)
+            else:  # Being deselected
+                self.setPen(self.normal_pen)
+                self.setBrush(self.normal_brush)
                 
         return super().itemChange(change, value)
+    
+    def paint(self, painter, option, widget=None):
+        """Custom paint to show selection state"""
+        # Remove the selection rectangle that Qt draws by default
+        option.state &= ~QStyle.State_Selected
+        
+        # Enable antialiasing
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw the rectangle
+        if self.isSelected():
+            painter.setPen(self.selected_pen)
+            painter.setBrush(self.selected_brush)
+        else:
+            painter.setPen(self.normal_pen)
+            painter.setBrush(self.normal_brush)
+        
+        painter.drawRect(self.rect())
+        
+        # Draw selection highlight if selected
+        if self.isSelected():
+            # Draw a glow effect
+            glow_pen = QPen(QColor(255, 120, 0, 100), 6)
+            painter.setPen(glow_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(self.rect().adjusted(-3, -3, 3, 3))
 
     def mousePressEvent(self, event):
         """Handle mouse press - select node"""
@@ -210,7 +252,6 @@ class FlowchartView(QGraphicsView):
         
     def create_start_node(self):
         """Create initial START node"""
-        from models import FlowchartNode
         start_node = FlowchartNode("START", "Start", "START")
         self.scene.add_flowchart_node(start_node, 50, 50)
         

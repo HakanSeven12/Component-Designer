@@ -11,7 +11,7 @@ from PySide2.QtCore import Qt, Signal, QMimeData
 from PySide2.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
 from models import (PointGeometryType, LinkType, ParameterType, TargetType,
-                   PointNode, LinkNode, ShapeNode, DecisionNode)
+                   PointNode, LinkNode, ShapeNode, DecisionNode,FlowchartNode)
 
 
 class DraggableTreeWidget(QTreeWidget):
@@ -204,6 +204,184 @@ class PropertiesPanel(QWidget):
         self.shape_group.hide()
         self.decision_group.hide()
         
+        # Connect signals for property changes
+        self.connect_property_signals()
+
+    def connect_property_signals(self):
+        """Connect property change signals"""
+        # Point properties
+        self.node_name.textChanged.connect(self.on_name_changed)
+        self.geometry_type.currentIndexChanged.connect(self.on_geometry_type_changed)
+        self.offset_spin.valueChanged.connect(self.on_offset_changed)
+        self.elevation_spin.valueChanged.connect(self.on_elevation_changed)
+        self.delta_x_spin.valueChanged.connect(self.on_delta_x_changed)
+        self.delta_y_spin.valueChanged.connect(self.on_delta_y_changed)
+        self.slope_spin.valueChanged.connect(self.on_slope_changed)
+        self.from_point_combo.currentIndexChanged.connect(self.on_from_point_changed)
+        self.add_link_check.stateChanged.connect(self.on_add_link_changed)
+        self.point_codes_edit.textChanged.connect(self.on_point_codes_changed)
+        
+        # Link properties
+        self.link_type_combo.currentIndexChanged.connect(self.on_link_type_changed)
+        self.start_point_combo.currentIndexChanged.connect(self.on_start_point_changed)
+        self.end_point_combo.currentIndexChanged.connect(self.on_end_point_changed)
+        self.link_codes_edit.textChanged.connect(self.on_link_codes_changed)
+        self.material_combo.currentTextChanged.connect(self.on_material_changed)
+        self.thickness_spin.valueChanged.connect(self.on_thickness_changed)
+        
+        # Shape properties
+        self.shape_codes_edit.textChanged.connect(self.on_shape_codes_changed)
+        
+        # Decision properties
+        self.condition_edit.textChanged.connect(self.on_condition_changed)
+
+    def block_all_signals(self, block):
+        """Block or unblock all widget signals"""
+        # Point widgets
+        self.node_name.blockSignals(block)
+        self.geometry_type.blockSignals(block)
+        self.offset_spin.blockSignals(block)
+        self.elevation_spin.blockSignals(block)
+        self.delta_x_spin.blockSignals(block)
+        self.delta_y_spin.blockSignals(block)
+        self.slope_spin.blockSignals(block)
+        self.from_point_combo.blockSignals(block)
+        self.add_link_check.blockSignals(block)
+        self.point_codes_edit.blockSignals(block)
+        
+        # Link widgets
+        self.link_type_combo.blockSignals(block)
+        self.start_point_combo.blockSignals(block)
+        self.end_point_combo.blockSignals(block)
+        self.link_codes_edit.blockSignals(block)
+        self.material_combo.blockSignals(block)
+        self.thickness_spin.blockSignals(block)
+        
+        # Shape widgets
+        self.shape_codes_edit.blockSignals(block)
+        
+        # Decision widgets
+        self.condition_edit.blockSignals(block)
+
+    def on_point_codes_changed(self, text):
+        """Handle point codes change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            # Parse comma-separated quoted strings
+            import re
+            codes = re.findall(r'"([^"]*)"', text)
+            self.current_node.point_codes = codes
+            
+    def on_link_codes_changed(self, text):
+        """Handle link codes change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            # Parse comma-separated quoted strings
+            import re
+            codes = re.findall(r'"([^"]*)"', text)
+            self.current_node.link_codes = codes
+            
+    def on_shape_codes_changed(self, text):
+        """Handle shape codes change"""
+        if self.current_node and isinstance(self.current_node, ShapeNode):
+            # Parse comma-separated quoted strings
+            import re
+            codes = re.findall(r'"([^"]*)"', text)
+            self.current_node.shape_codes = codes
+            
+    def on_condition_changed(self):
+        """Handle condition change"""
+        if self.current_node and isinstance(self.current_node, DecisionNode):
+            self.current_node.condition = self.condition_edit.toPlainText()
+            
+    def on_name_changed(self, text):
+        """Handle name change"""
+        if self.current_node:
+            self.current_node.name = text
+            self.update_flowchart_display()
+            
+    def on_geometry_type_changed(self, index):
+        """Handle geometry type change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.geometry_type = self.geometry_type.currentData()
+            
+    def on_offset_changed(self, value):
+        """Handle offset change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.offset = value
+            
+    def on_elevation_changed(self, value):
+        """Handle elevation change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.elevation = value
+            
+    def on_delta_x_changed(self, value):
+        """Handle delta X change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.delta_x = value
+            
+    def on_delta_y_changed(self, value):
+        """Handle delta Y change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.delta_y = value
+            
+    def on_slope_changed(self, value):
+        """Handle slope change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.slope = value
+            
+    def on_from_point_changed(self, index):
+        """Handle from point change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.from_point = self.from_point_combo.currentData()
+            
+    def on_add_link_changed(self, state):
+        """Handle add link checkbox change"""
+        if self.current_node and isinstance(self.current_node, PointNode):
+            self.current_node.add_link_to_from = (state == Qt.Checked)
+            
+    def on_link_type_changed(self, index):
+        """Handle link type change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.link_type = self.link_type_combo.currentData()
+            
+    def on_start_point_changed(self, index):
+        """Handle start point change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.start_point = self.start_point_combo.currentData()
+            
+    def on_end_point_changed(self, index):
+        """Handle end point change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.end_point = self.end_point_combo.currentData()
+            
+    def on_material_changed(self, text):
+        """Handle material change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.material = text
+            
+    def on_thickness_changed(self, value):
+        """Handle thickness change"""
+        if self.current_node and isinstance(self.current_node, LinkNode):
+            self.current_node.thickness = value
+            
+    def update_flowchart_display(self):
+        """Update flowchart visual display"""
+        flowchart_scene = self.get_flowchart_scene()
+        if not flowchart_scene:
+            return
+            
+        # Update the visual representation of nodes
+        for item in flowchart_scene.items():
+            if isinstance(item, FlowchartNode):
+                if item.node == self.current_node:
+                    # Update text display
+                    item.text.setPlainText(f"{item.node.type}\n{item.node.name}")
+                    # Re-center text
+                    text_rect = item.text.boundingRect()
+                    text_x = (120 - text_rect.width()) / 2
+                    text_y = (60 - text_rect.height()) / 2
+                    item.text.setPos(text_x, text_y)
+                    break
+
     def load_node(self, node):
         """Load node properties into panel"""
         self.current_node = node
@@ -216,8 +394,15 @@ class PropertiesPanel(QWidget):
         
         if node is None:
             return
-            
+        
+        # Temporarily block signals while loading
+        self.blockSignals(True)
+        self.block_all_signals(True)
+        
         self.node_name.setText(node.name)
+        
+        # Update combo boxes with available nodes from flowchart
+        self.update_node_combos()
         
         if isinstance(node, PointNode):
             self.point_group.show()
@@ -233,6 +418,16 @@ class PropertiesPanel(QWidget):
             self.add_link_check.setChecked(node.add_link_to_from)
             self.point_codes_edit.setText(','.join(f'"{c}"' for c in node.point_codes))
             
+            # Set from_point if exists
+            if node.from_point:
+                index = self.from_point_combo.findData(node.from_point)
+                if index >= 0:
+                    self.from_point_combo.setCurrentIndex(index)
+                else:
+                    self.from_point_combo.setCurrentIndex(0)  # Set to "(None)"
+            else:
+                self.from_point_combo.setCurrentIndex(0)  # Set to "(None)"
+            
         elif isinstance(node, LinkNode):
             self.link_group.show()
             # Load link properties
@@ -243,6 +438,25 @@ class PropertiesPanel(QWidget):
             self.material_combo.setCurrentText(node.material)
             self.thickness_spin.setValue(node.thickness)
             
+            # Set start_point and end_point if exist
+            if node.start_point:
+                index = self.start_point_combo.findData(node.start_point)
+                if index >= 0:
+                    self.start_point_combo.setCurrentIndex(index)
+                else:
+                    self.start_point_combo.setCurrentIndex(0)  # Set to "(None)"
+            else:
+                self.start_point_combo.setCurrentIndex(0)  # Set to "(None)"
+                
+            if node.end_point:
+                index = self.end_point_combo.findData(node.end_point)
+                if index >= 0:
+                    self.end_point_combo.setCurrentIndex(index)
+                else:
+                    self.end_point_combo.setCurrentIndex(0)  # Set to "(None)"
+            else:
+                self.end_point_combo.setCurrentIndex(0)  # Set to "(None)"
+            
         elif isinstance(node, ShapeNode):
             self.shape_group.show()
             # Load shape properties
@@ -252,7 +466,57 @@ class PropertiesPanel(QWidget):
             self.decision_group.show()
             # Load decision properties
             self.condition_edit.setText(node.condition)
+        
+        # Re-enable signals
+        self.block_all_signals(False)
+        self.blockSignals(False)
 
+    def update_node_combos(self):
+        """Update combo boxes with nodes from flowchart"""
+        if not self.current_node:
+            return
+            
+        # Get flowchart scene from parent hierarchy
+        flowchart_scene = self.get_flowchart_scene()
+        if not flowchart_scene:
+            return
+            
+        # Clear combo boxes
+        self.from_point_combo.clear()
+        self.start_point_combo.clear()
+        self.end_point_combo.clear()
+        
+        # Add "None" option
+        self.from_point_combo.addItem("(None)", None)
+        self.start_point_combo.addItem("(None)", None)
+        self.end_point_combo.addItem("(None)", None)
+        
+        # Get all nodes that were added before current node
+        nodes_before = []
+        for node_id, node in flowchart_scene.nodes.items():
+            # Only add nodes that come before current node
+            if node.id == self.current_node.id:
+                break
+            nodes_before.append(node)
+        
+        # Add Point nodes to point combos
+        for node in nodes_before:
+            if isinstance(node, PointNode):
+                display_name = f"{node.name} ({node.type})"
+                self.from_point_combo.addItem(display_name, node.id)
+                self.start_point_combo.addItem(display_name, node.id)
+                self.end_point_combo.addItem(display_name, node.id)
+                
+    def get_flowchart_scene(self):
+        """Get flowchart scene from main window"""
+        # Traverse up the widget hierarchy to find main window
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, 'flowchart'):
+                return widget.flowchart.scene
+            widget = widget.parentWidget()
+        return None
+    
 
 class ParametersPanel(QWidget):
     """Panel for managing Input/Output and Target parameters"""
