@@ -19,7 +19,6 @@ class ComponentDesigner(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Component Designer - FreeCAD Road Workbench")
-        self.setGeometry(50, 50, 1600, 900)
         
         self.current_file = None
         self.modified = False
@@ -29,6 +28,9 @@ class ComponentDesigner(QMainWindow):
         self.create_menus()
         self.create_toolbars()
         self.connect_signals()
+
+        # Maximize window on startup
+        self.showMaximized()
         
     def setup_ui(self):
         """Setup main user interface"""
