@@ -9,6 +9,7 @@ from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsRectItem,
 from PySide2.QtCore import Qt, Signal, QPointF, QLineF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF, QMouseEvent
 from models import PointNode, LinkNode, ShapeNode, DecisionNode, FlowchartNode
+from base_graphics_view import BaseGraphicsView
 
 
 class ConnectionArrow(QGraphicsLineItem):
@@ -224,7 +225,7 @@ class FlowchartScene(QGraphicsScene):
             arrow.update_position()
 
 
-class FlowchartView(QGraphicsView):
+class FlowchartView(BaseGraphicsView):  # Changed from QGraphicsView
     """Flowchart editor view"""
     
     def __init__(self):
@@ -244,10 +245,6 @@ class FlowchartView(QGraphicsView):
         self.connecting_mode = False
         self.connection_start = None
         
-        # Pan mode variables
-        self.is_panning = False
-        self.pan_start_pos = None
-        
         # Connect scene signals
         self.scene.node_selected.connect(self.on_node_selected)
         
@@ -256,6 +253,10 @@ class FlowchartView(QGraphicsView):
         
         # Create START node
         self.create_start_node()
+        
+    def restore_drag_mode(self):
+        """Restore drag mode after panning"""
+        self.setDragMode(QGraphicsView.RubberBandDrag)
         
     def create_start_node(self):
         """Create initial START node"""
@@ -401,83 +402,3 @@ class FlowchartView(QGraphicsView):
         
         self.scene.add_flowchart_node(decision, x, y)
         return decision
-    
-    def mousePressEvent(self, event):
-        """Handle mouse press for panning"""
-        if event.button() == Qt.MiddleButton:
-            # Start panning - switch to ScrollHandDrag mode
-            self.is_panning = True
-            self.setDragMode(QGraphicsView.ScrollHandDrag)
-            self.setCursor(Qt.ClosedHandCursor)
-            # Create a fake left button event to start the drag
-            fake_event = QMouseEvent(
-                event.type(),
-                event.localPos(),
-                Qt.LeftButton,
-                Qt.LeftButton,
-                event.modifiers()
-            )
-            super().mousePressEvent(fake_event)
-            event.accept()
-        else:
-            super().mousePressEvent(event)
-            
-    def mouseMoveEvent(self, event):
-        """Handle mouse move for panning"""
-        if self.is_panning:
-            # Pass through as left button for ScrollHandDrag
-            fake_event = QMouseEvent(
-                event.type(),
-                event.localPos(),
-                Qt.LeftButton,
-                Qt.LeftButton,
-                event.modifiers()
-            )
-            super().mouseMoveEvent(fake_event)
-            event.accept()
-        else:
-            super().mouseMoveEvent(event)
-            
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release to end panning"""
-        if event.button() == Qt.MiddleButton and self.is_panning:
-            # End panning - restore RubberBandDrag mode
-            self.is_panning = False
-            # Create fake left button release
-            fake_event = QMouseEvent(
-                event.type(),
-                event.localPos(),
-                Qt.LeftButton,
-                Qt.LeftButton,
-                event.modifiers()
-            )
-            super().mouseReleaseEvent(fake_event)
-            self.setDragMode(QGraphicsView.RubberBandDrag)
-            self.setCursor(Qt.ArrowCursor)
-            event.accept()
-        else:
-            super().mouseReleaseEvent(event)
-
-    def wheelEvent(self, event):
-        """Handle zoom with mouse wheel (scroll) or pan with Shift+wheel"""
-        # Check if Shift is pressed for horizontal pan
-        if event.modifiers() & Qt.ShiftModifier:
-            # Horizontal pan with Shift+wheel
-            delta = event.angleDelta().y()
-            self.horizontalScrollBar().setValue(
-                self.horizontalScrollBar().value() - delta
-            )
-        # Check if Ctrl is pressed for zoom
-        elif event.modifiers() & Qt.ControlModifier:
-            # Zoom with Ctrl+wheel
-            factor = 1.15
-            if event.angleDelta().y() > 0:
-                self.scale(factor, factor)
-            else:
-                self.scale(1/factor, 1/factor)
-        else:
-            # Default: vertical pan with wheel
-            delta = event.angleDelta().y()
-            self.verticalScrollBar().setValue(
-                self.verticalScrollBar().value() - delta
-            )

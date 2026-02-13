@@ -7,9 +7,10 @@ from PySide2.QtCore import Qt, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF
 
 from models import PointNode, LinkNode, ShapeNode
+from base_graphics_view import BaseGraphicsView
 
 
-class GeometryPreview(QGraphicsView):
+class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
     """Preview panel showing the component geometry"""
     
     def __init__(self):
@@ -28,6 +29,10 @@ class GeometryPreview(QGraphicsView):
         self.shapes = []
         
         self.setup_scene()
+        
+    def restore_drag_mode(self):
+        """Restore drag mode after panning"""
+        self.setDragMode(QGraphicsView.NoDrag)
         
     def setup_scene(self):
         """Initialize preview scene"""
