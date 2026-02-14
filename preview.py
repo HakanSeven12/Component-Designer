@@ -188,7 +188,11 @@ class GeometryPreview(BaseGraphicsView):
         origin_text.setDefaultTextColor(QColor(100, 100, 100))
         
     def update_preview(self, flowchart_nodes):
-        """Update preview based on flowchart"""
+        """Update preview based on flowchart - GENERIC VERSION
+        
+        This method no longer needs to know about specific node types.
+        Each node creates its own preview items.
+        """
         # Clear existing geometry (keep grid and axes)
         for item in list(self.scene.items()):
             if isinstance(item, (PreviewPointItem, PreviewLineItem, PreviewTextItem, QGraphicsPolygonItem)):
@@ -201,124 +205,25 @@ class GeometryPreview(BaseGraphicsView):
         self.points.clear()
         self.links.clear()
         
-        # Process flowchart nodes
+        # Process flowchart nodes - GENERIC APPROACH
         point_positions = {}
         
         for node_id, node in flowchart_nodes.items():
-            if isinstance(node, PointNode):
-                # Compute point position
-                from_pos = None
-                if node.from_point and node.from_point in point_positions:
-                    from_pos = point_positions[node.from_point]
+            try:
+                # Ask node to create its own preview items
+                items = node.create_preview_items(
+                    self.scene,
+                    self.scale_factor,
+                    self.show_codes,
+                    point_positions
+                )
+                
+                # Add all items to scene
+                for item in items:
+                    self.scene.addItem(item)
                     
-                pos = node.compute_position(from_pos)
-                point_positions[node.id] = pos
-                
-                # Draw point
-                x = pos[0] * self.scale_factor
-                y = -pos[1] * self.scale_factor  # Invert Y for screen coordinates
-                
-                # Create selectable point item
-                point_item = PreviewPointItem(x, y, node)
-                self.scene.addItem(point_item)
-                
-                # Add node name label with PreviewTextItem
-                name_text = PreviewTextItem(node.name, node)
-                name_font = QFont()
-                name_font.setPointSize(8)
-                name_font.setBold(True)
-                name_text.setFont(name_font)
-                name_text.setPos(x + 8, y - 25)
-                name_text.setDefaultTextColor(QColor(0, 0, 180))
-                self.scene.addItem(name_text)
-                
-                # Add point codes if enabled
-                if self.show_codes and node.point_codes:
-                    code_text = PreviewTextItem(f"[{','.join(node.point_codes)}]", node)
-                    code_font = QFont()
-                    code_font.setPointSize(7)
-                    code_text.setFont(code_font)
-                    code_text.setPos(x + 8, y - 10)
-                    code_text.setDefaultTextColor(QColor(0, 0, 255))
-                    self.scene.addItem(code_text)
-                    
-            elif isinstance(node, LinkNode):
-                # Draw link between points
-                if node.start_point and node.end_point:
-                    if node.start_point in point_positions and node.end_point in point_positions:
-                        start_pos = point_positions[node.start_point]
-                        end_pos = point_positions[node.end_point]
-                        
-                        x1 = start_pos[0] * self.scale_factor
-                        y1 = -start_pos[1] * self.scale_factor
-                        x2 = end_pos[0] * self.scale_factor
-                        y2 = -end_pos[1] * self.scale_factor
-                        
-                        # Create selectable line item
-                        line_item = PreviewLineItem(x1, y1, x2, y2, node)
-                        self.scene.addItem(line_item)
-                        
-                        # Add link name label
-                        mid_x = (x1 + x2) / 2
-                        mid_y = (y1 + y2) / 2
-                        name_text = PreviewTextItem(node.name, node)
-                        name_font = QFont()
-                        name_font.setPointSize(8)
-                        name_font.setBold(True)
-                        name_text.setFont(name_font)
-                        name_text.setPos(mid_x, mid_y - 30)
-                        name_text.setDefaultTextColor(QColor(0, 100, 0))
-                        self.scene.addItem(name_text)
-                        
-                        # Add link codes if enabled
-                        if self.show_codes and node.link_codes:
-                            code_text = PreviewTextItem(f"[{','.join(node.link_codes)}]", node)
-                            code_font = QFont()
-                            code_font.setPointSize(7)
-                            code_text.setFont(code_font)
-                            code_text.setPos(mid_x, mid_y - 15)
-                            code_text.setDefaultTextColor(QColor(0, 150, 0))
-                            self.scene.addItem(code_text)
-                            
-            elif isinstance(node, ShapeNode):
-                # Draw shape (closed polygon)
-                if len(node.links) >= 3:
-                    polygon_points = []
-                    for link_id in node.links:
-                        if link_id in flowchart_nodes:
-                            link = flowchart_nodes[link_id]
-                            if link.start_point in point_positions:
-                                pos = point_positions[link.start_point]
-                                x = pos[0] * self.scale_factor
-                                y = -pos[1] * self.scale_factor
-                                polygon_points.append(QPointF(x, y))
-                    
-                    if len(polygon_points) >= 3:
-                        polygon = QPolygonF(polygon_points)
-                        shape_item = self.scene.addPolygon(
-                            polygon,
-                            QPen(QColor(100, 100, 100), 1),
-                            QBrush(QColor(200, 200, 150, 128))
-                        )
-                        shape_item.setData(0, node)
-                        
-                        # Add shape name label
-                        center = polygon.boundingRect().center()
-                        name_text = PreviewTextItem(node.name, node)
-                        name_font = QFont()
-                        name_font.setPointSize(8)
-                        name_font.setBold(True)
-                        name_text.setFont(name_font)
-                        name_text.setPos(center.x() - 20, center.y() - 25)
-                        name_text.setDefaultTextColor(QColor(80, 80, 0))
-                        self.scene.addItem(name_text)
-                        
-                        # Add shape codes
-                        if self.show_codes and node.shape_codes:
-                            code_text = PreviewTextItem(f"[{','.join(node.shape_codes)}]", node)
-                            code_font = QFont()
-                            code_font.setPointSize(7)
-                            code_text.setFont(code_font)
-                            code_text.setPos(center.x() - 30, center.y() - 10)
-                            code_text.setDefaultTextColor(QColor(100, 100, 0))
-                            self.scene.addItem(code_text)
+            except Exception as e:
+                # Log error but continue with other nodes
+                print(f"Error creating preview for {node.type} {node.name}: {e}")
+                import traceback
+                traceback.print_exc()

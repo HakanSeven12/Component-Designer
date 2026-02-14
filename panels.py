@@ -6,7 +6,7 @@ from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, Q
                                QLineEdit, QDoubleSpinBox, QComboBox, QCheckBox, QTextEdit,
                                QPushButton, QTableWidget, QTableWidgetItem, QListWidget,
                                QTabWidget, QTreeWidget, QTreeWidgetItem, QAbstractItemView,
-                               QApplication)
+                               QApplication, QScrollArea)
 from PySide2.QtCore import Qt, Signal, QMimeData
 from PySide2.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
@@ -73,421 +73,240 @@ class PropertiesPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.current_node = None
+        self.property_widgets = {}
+        self.widget_connections = []
         self.setup_ui()
         
     def setup_ui(self):
-        layout = QVBoxLayout()
+        """Setup basic UI structure"""
+        main_layout = QVBoxLayout()
         
-        # Node name
-        name_group = QGroupBox("General")
-        name_layout = QFormLayout()
+        # Scroll area for properties
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        
+        # Container for dynamic content
+        self.container = QWidget()
+        self.container_layout = QVBoxLayout()
+        self.container_layout.setContentsMargins(0, 0, 0, 0)
+        self.container.setLayout(self.container_layout)
+        
+        scroll.setWidget(self.container)
+        main_layout.addWidget(scroll)
+        
+        self.setLayout(main_layout)
+        
+    def load_node(self, node):
+        """Load node properties dynamically"""
+        if node is None:
+            self.clear_properties()
+            return
+        
+        self.current_node = node
+        self.clear_properties()
+        
+        # Create general group
+        general_group = QGroupBox("General")
+        general_layout = QFormLayout()
+        
+        # Node name (always present)
         self.node_name = QLineEdit()
-        name_layout.addRow("Name:", self.node_name)
-        name_group.setLayout(name_layout)
-        layout.addWidget(name_group)
-        
-        # Point properties
-        self.point_group = QGroupBox("Point Geometry")
-        point_layout = QFormLayout()
-        
-        self.geometry_type = QComboBox()
-        for gt in PointGeometryType:
-            self.geometry_type.addItem(gt.value, gt)
-        
-        self.offset_spin = QDoubleSpinBox()
-        self.offset_spin.setRange(-1000, 1000)
-        self.offset_spin.setDecimals(3)
-        
-        self.elevation_spin = QDoubleSpinBox()
-        self.elevation_spin.setRange(-1000, 1000)
-        self.elevation_spin.setDecimals(3)
-        
-        self.delta_x_spin = QDoubleSpinBox()
-        self.delta_x_spin.setRange(-1000, 1000)
-        self.delta_x_spin.setDecimals(3)
-        
-        self.delta_y_spin = QDoubleSpinBox()
-        self.delta_y_spin.setRange(-1000, 1000)
-        self.delta_y_spin.setDecimals(3)
-        
-        self.slope_spin = QDoubleSpinBox()
-        self.slope_spin.setRange(-10, 10)
-        self.slope_spin.setDecimals(3)
-        
-        self.from_point_combo = QComboBox()
-        self.add_link_check = QCheckBox("Add Link to From Point")
-        
-        self.point_codes_edit = QLineEdit()
-        self.point_codes_edit.setPlaceholderText('"Code1","Code2"')
-        
-        point_layout.addRow("Geometry Type:", self.geometry_type)
-        point_layout.addRow("Offset:", self.offset_spin)
-        point_layout.addRow("Elevation:", self.elevation_spin)
-        point_layout.addRow("Delta X:", self.delta_x_spin)
-        point_layout.addRow("Delta Y:", self.delta_y_spin)
-        point_layout.addRow("Slope:", self.slope_spin)
-        point_layout.addRow("From Point:", self.from_point_combo)
-        point_layout.addRow("", self.add_link_check)
-        point_layout.addRow("Point Codes:", self.point_codes_edit)
-        
-        self.point_group.setLayout(point_layout)
-        layout.addWidget(self.point_group)
-        
-        # Link properties
-        self.link_group = QGroupBox("Link Properties")
-        link_layout = QFormLayout()
-        
-        self.link_type_combo = QComboBox()
-        for lt in LinkType:
-            self.link_type_combo.addItem(lt.value, lt)
-            
-        self.start_point_combo = QComboBox()
-        self.end_point_combo = QComboBox()
-        
-        self.link_codes_edit = QLineEdit()
-        self.link_codes_edit.setPlaceholderText('"Top","Pave"')
-        
-        self.material_combo = QComboBox()
-        self.material_combo.addItems(["Asphalt", "Concrete", "Granular", "Soil"])
-        
-        self.thickness_spin = QDoubleSpinBox()
-        self.thickness_spin.setRange(0, 10)
-        self.thickness_spin.setDecimals(3)
-        self.thickness_spin.setSuffix(" m")
-        
-        link_layout.addRow("Link Type:", self.link_type_combo)
-        link_layout.addRow("Start Point:", self.start_point_combo)
-        link_layout.addRow("End Point:", self.end_point_combo)
-        link_layout.addRow("Link Codes:", self.link_codes_edit)
-        link_layout.addRow("Material:", self.material_combo)
-        link_layout.addRow("Thickness:", self.thickness_spin)
-        
-        self.link_group.setLayout(link_layout)
-        layout.addWidget(self.link_group)
-        
-        # Shape properties
-        self.shape_group = QGroupBox("Shape Properties")
-        shape_layout = QFormLayout()
-        
-        self.shape_codes_edit = QLineEdit()
-        self.shape_codes_edit.setPlaceholderText('"Pave"')
-        
-        self.shape_links_list = QListWidget()
-        self.add_link_to_shape_btn = QPushButton("Add Link")
-        
-        shape_layout.addRow("Shape Codes:", self.shape_codes_edit)
-        shape_layout.addRow("Links:", self.shape_links_list)
-        shape_layout.addRow("", self.add_link_to_shape_btn)
-        
-        self.shape_group.setLayout(shape_layout)
-        layout.addWidget(self.shape_group)
-        
-        # Decision properties
-        self.decision_group = QGroupBox("Decision Properties")
-        decision_layout = QFormLayout()
-        
-        self.condition_edit = QTextEdit()
-        self.condition_edit.setMaximumHeight(60)
-        self.condition_edit.setPlaceholderText('e.g.: EG_Elevation > P1_Elevation')
-        
-        decision_layout.addRow("Condition:", self.condition_edit)
-        
-        self.decision_group.setLayout(decision_layout)
-        layout.addWidget(self.decision_group)
-        
-        layout.addStretch()
-        self.setLayout(layout)
-        
-        # Hide all groups initially
-        self.point_group.hide()
-        self.link_group.hide()
-        self.shape_group.hide()
-        self.decision_group.hide()
-        
-        # Connect signals for property changes
-        self.connect_property_signals()
-
-    def connect_property_signals(self):
-        """Connect property change signals"""
-        # Point properties
+        self.node_name.setText(node.name)
         self.node_name.textChanged.connect(self.on_name_changed)
-        self.geometry_type.currentIndexChanged.connect(self.on_geometry_type_changed)
-        self.offset_spin.valueChanged.connect(self.on_offset_changed)
-        self.elevation_spin.valueChanged.connect(self.on_elevation_changed)
-        self.delta_x_spin.valueChanged.connect(self.on_delta_x_changed)
-        self.delta_y_spin.valueChanged.connect(self.on_delta_y_changed)
-        self.slope_spin.valueChanged.connect(self.on_slope_changed)
-        self.from_point_combo.currentIndexChanged.connect(self.on_from_point_changed)
-        self.add_link_check.stateChanged.connect(self.on_add_link_changed)
-        self.point_codes_edit.textChanged.connect(self.on_point_codes_changed)
+        general_layout.addRow("Name:", self.node_name)
         
-        # Link properties
-        self.link_type_combo.currentIndexChanged.connect(self.on_link_type_changed)
-        self.start_point_combo.currentIndexChanged.connect(self.on_start_point_changed)
-        self.end_point_combo.currentIndexChanged.connect(self.on_end_point_changed)
-        self.link_codes_edit.textChanged.connect(self.on_link_codes_changed)
-        self.material_combo.currentTextChanged.connect(self.on_material_changed)
-        self.thickness_spin.valueChanged.connect(self.on_thickness_changed)
+        general_group.setLayout(general_layout)
+        self.container_layout.addWidget(general_group)
         
-        # Shape properties
-        self.shape_codes_edit.textChanged.connect(self.on_shape_codes_changed)
+        # Get node-specific widgets
+        try:
+            widgets_info = node.get_properties_widgets(self.container)
+        except NotImplementedError:
+            # Node doesn't implement properties
+            self.container_layout.addStretch()
+            return
         
-        # Decision properties
-        self.condition_edit.textChanged.connect(self.on_condition_changed)
-
-    def block_all_signals(self, block):
-        """Block or unblock all widget signals"""
-        # Point widgets
-        self.node_name.blockSignals(block)
-        self.geometry_type.blockSignals(block)
-        self.offset_spin.blockSignals(block)
-        self.elevation_spin.blockSignals(block)
-        self.delta_x_spin.blockSignals(block)
-        self.delta_y_spin.blockSignals(block)
-        self.slope_spin.blockSignals(block)
-        self.from_point_combo.blockSignals(block)
-        self.add_link_check.blockSignals(block)
-        self.point_codes_edit.blockSignals(block)
+        if not widgets_info:
+            self.container_layout.addStretch()
+            return
         
-        # Link widgets
-        self.link_type_combo.blockSignals(block)
-        self.start_point_combo.blockSignals(block)
-        self.end_point_combo.blockSignals(block)
-        self.link_codes_edit.blockSignals(block)
-        self.material_combo.blockSignals(block)
-        self.thickness_spin.blockSignals(block)
+        # Create properties group
+        properties_group = QGroupBox(f"{node.type} Properties")
+        properties_layout = QFormLayout()
         
-        # Shape widgets
-        self.shape_codes_edit.blockSignals(block)
+        self.property_widgets = {}
         
-        # Decision widgets
-        self.condition_edit.blockSignals(block)
-
+        for prop_name, widget_info in widgets_info.items():
+            widget = widget_info['widget']
+            label = widget_info['label']
+            getter = widget_info['getter']
+            setter = widget_info['setter']
+            
+            # Store widget info
+            self.property_widgets[prop_name] = {
+                'widget': widget,
+                'getter': getter,
+                'setter': setter,
+                'node_attr': prop_name
+            }
+            
+            # Set initial value from node
+            if hasattr(node, prop_name):
+                try:
+                    setter(getattr(node, prop_name))
+                except:
+                    pass
+            
+            # Check if this widget needs population (like combo boxes with point list)
+            if 'populate' in widget_info and widget_info['populate'] == 'points':
+                self.populate_point_combo(widget)
+            
+            # Connect to update handler
+            self.connect_widget_signal(widget, prop_name)
+            
+            # Add to layout
+            if label:
+                properties_layout.addRow(label, widget)
+            else:
+                properties_layout.addRow(widget)
+        
+        properties_group.setLayout(properties_layout)
+        self.container_layout.addWidget(properties_group)
+        self.container_layout.addStretch()
+        
+    def connect_widget_signal(self, widget, prop_name):
+        """Connect appropriate signal based on widget type"""
+        from PySide2.QtWidgets import (QComboBox, QDoubleSpinBox, QSpinBox, 
+                                        QLineEdit, QCheckBox, QTextEdit)
+        
+        if isinstance(widget, QComboBox):
+            connection = widget.currentIndexChanged.connect(
+                lambda: self.on_property_changed(prop_name)
+            )
+        elif isinstance(widget, (QDoubleSpinBox, QSpinBox)):
+            connection = widget.valueChanged.connect(
+                lambda: self.on_property_changed(prop_name)
+            )
+        elif isinstance(widget, QLineEdit):
+            connection = widget.textChanged.connect(
+                lambda: self.on_property_changed(prop_name)
+            )
+        elif isinstance(widget, QCheckBox):
+            connection = widget.stateChanged.connect(
+                lambda: self.on_property_changed(prop_name)
+            )
+        elif isinstance(widget, QTextEdit):
+            connection = widget.textChanged.connect(
+                lambda: self.on_property_changed(prop_name)
+            )
+        
+        self.widget_connections.append(connection)
+    
     def on_name_changed(self, text):
-        """Handle name change"""
+        """Handle node name change"""
         if self.current_node:
             self.current_node.name = text
             self.update_flowchart_display()
             self.update_preview()
+    
+    def on_property_changed(self, prop_name):
+        """Handle property value change"""
+        if not self.current_node:
+            return
+        
+        widget_info = self.property_widgets.get(prop_name)
+        if not widget_info:
+            return
+        
+        # Get value from widget using getter
+        try:
+            value = widget_info['getter']()
             
-    def on_geometry_type_changed(self, index):
-        """Handle geometry type change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.geometry_type = self.geometry_type.currentData()
+            # Set value on node
+            if hasattr(self.current_node, prop_name):
+                setattr(self.current_node, prop_name, value)
+            
+            # Trigger updates
             self.update_preview()
             
-    def on_offset_changed(self, value):
-        """Handle offset change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.offset = value
-            self.update_preview()
-            
-    def on_elevation_changed(self, value):
-        """Handle elevation change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.elevation = value
-            self.update_preview()
-            
-    def on_delta_x_changed(self, value):
-        """Handle delta X change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.delta_x = value
-            self.update_preview()
-            
-    def on_delta_y_changed(self, value):
-        """Handle delta Y change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.delta_y = value
-            self.update_preview()
-            
-    def on_slope_changed(self, value):
-        """Handle slope change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.slope = value
-            self.update_preview()
-            
-    def on_from_point_changed(self, index):
-        """Handle from point change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.from_point = self.from_point_combo.currentData()
-            self.update_preview()
-            
-    def on_add_link_changed(self, state):
-        """Handle add link checkbox change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            self.current_node.add_link_to_from = (state == Qt.Checked)
-            self.update_preview()
-            
-    def on_link_type_changed(self, index):
-        """Handle link type change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.link_type = self.link_type_combo.currentData()
-            self.update_preview()
-            
-    def on_start_point_changed(self, index):
-        """Handle start point change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.start_point = self.start_point_combo.currentData()
-            self.update_preview()
-            
-    def on_end_point_changed(self, index):
-        """Handle end point change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.end_point = self.end_point_combo.currentData()
-            self.update_preview()
-            
-    def on_material_changed(self, text):
-        """Handle material change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.material = text
-            self.update_preview()
-            
-    def on_thickness_changed(self, value):
-        """Handle thickness change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            self.current_node.thickness = value
-            self.update_preview()
-            
-    def on_point_codes_changed(self, text):
-        """Handle point codes change"""
-        if self.current_node and isinstance(self.current_node, PointNode):
-            # Parse comma-separated quoted strings
-            import re
-            codes = re.findall(r'"([^"]*)"', text)
-            self.current_node.point_codes = codes
-            self.update_preview()
-            
-    def on_link_codes_changed(self, text):
-        """Handle link codes change"""
-        if self.current_node and isinstance(self.current_node, LinkNode):
-            # Parse comma-separated quoted strings
-            import re
-            codes = re.findall(r'"([^"]*)"', text)
-            self.current_node.link_codes = codes
-            self.update_preview()
-            
-    def on_shape_codes_changed(self, text):
-        """Handle shape codes change"""
-        if self.current_node and isinstance(self.current_node, ShapeNode):
-            # Parse comma-separated quoted strings
-            import re
-            codes = re.findall(r'"([^"]*)"', text)
-            self.current_node.shape_codes = codes
-            self.update_preview()
-            
-    def on_condition_changed(self):
-        """Handle condition change"""
-        if self.current_node and isinstance(self.current_node, DecisionNode):
-            self.current_node.condition = self.condition_edit.toPlainText()
-            self.update_preview()
-            
+        except Exception as e:
+            print(f"Error updating property {prop_name}: {e}")
+    
+    def populate_point_combo(self, combo):
+        """Populate combo box with available points"""
+        flowchart_scene = self.get_flowchart_scene()
+        if not flowchart_scene or not self.current_node:
+            return
+        
+        combo.clear()
+        combo.addItem("(None)", None)
+        
+        # Get nodes before current node
+        from models import PointNode
+        for node_id, node in flowchart_scene.nodes.items():
+            if node.id == self.current_node.id:
+                break
+            if isinstance(node, PointNode):
+                display_name = f"{node.name} ({node.type})"
+                combo.addItem(display_name, node.id)
+    
+    def clear_properties(self):
+        """Clear all dynamic property widgets"""
+        # Disconnect all signals
+        for connection in self.widget_connections:
+            try:
+                connection.disconnect()
+            except:
+                pass
+        self.widget_connections.clear()
+        
+        # Clear widgets
+        self.property_widgets.clear()
+        
+        # Remove all widgets from container
+        while self.container_layout.count():
+            item = self.container_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+    
+    def get_flowchart_scene(self):
+        """Get flowchart scene from main window"""
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, 'flowchart'):
+                return widget.flowchart.scene
+            widget = widget.parentWidget()
+        return None
+    
     def update_flowchart_display(self):
         """Update flowchart visual display"""
         flowchart_scene = self.get_flowchart_scene()
         if not flowchart_scene:
             return
-            
-        # Update the visual representation of nodes
+        
+        # Update the visual representation
+        from flowchart import FlowchartNodeItem
         for item in flowchart_scene.items():
-            if isinstance(item, FlowchartNode):
+            if isinstance(item, FlowchartNodeItem):
                 if item.node == self.current_node:
                     # Update text display
-                    item.text.setPlainText(f"{item.node.type}\n{item.node.name}")
+                    item.text.setPlainText(self.current_node.get_flowchart_display_text())
                     # Re-center text
                     text_rect = item.text.boundingRect()
                     text_x = (120 - text_rect.width()) / 2
                     text_y = (60 - text_rect.height()) / 2
                     item.text.setPos(text_x, text_y)
                     break
-
-    def load_node(self, node):
-        """Load node properties into panel"""
-        self.current_node = node
-        
-        # Hide all groups
-        self.point_group.hide()
-        self.link_group.hide()
-        self.shape_group.hide()
-        self.decision_group.hide()
-        
-        if node is None:
-            return
-        
-        # Temporarily block signals while loading
-        self.blockSignals(True)
-        self.block_all_signals(True)
-        
-        self.node_name.setText(node.name)
-        
-        # Update combo boxes with available nodes from flowchart
-        self.update_node_combos()
-        
-        if isinstance(node, PointNode):
-            self.point_group.show()
-            # Load point properties
-            index = self.geometry_type.findData(node.geometry_type)
-            if index >= 0:
-                self.geometry_type.setCurrentIndex(index)
-            self.offset_spin.setValue(node.offset)
-            self.elevation_spin.setValue(node.elevation)
-            self.delta_x_spin.setValue(node.delta_x)
-            self.delta_y_spin.setValue(node.delta_y)
-            self.slope_spin.setValue(node.slope)
-            self.add_link_check.setChecked(node.add_link_to_from)
-            self.point_codes_edit.setText(','.join(f'"{c}"' for c in node.point_codes))
-            
-            # Set from_point if exists
-            if node.from_point:
-                index = self.from_point_combo.findData(node.from_point)
-                if index >= 0:
-                    self.from_point_combo.setCurrentIndex(index)
-                else:
-                    self.from_point_combo.setCurrentIndex(0)  # Set to "(None)"
-            else:
-                self.from_point_combo.setCurrentIndex(0)  # Set to "(None)"
-            
-        elif isinstance(node, LinkNode):
-            self.link_group.show()
-            # Load link properties
-            index = self.link_type_combo.findData(node.link_type)
-            if index >= 0:
-                self.link_type_combo.setCurrentIndex(index)
-            self.link_codes_edit.setText(','.join(f'"{c}"' for c in node.link_codes))
-            self.material_combo.setCurrentText(node.material)
-            self.thickness_spin.setValue(node.thickness)
-            
-            # Set start_point and end_point if exist
-            if node.start_point:
-                index = self.start_point_combo.findData(node.start_point)
-                if index >= 0:
-                    self.start_point_combo.setCurrentIndex(index)
-                else:
-                    self.start_point_combo.setCurrentIndex(0)  # Set to "(None)"
-            else:
-                self.start_point_combo.setCurrentIndex(0)  # Set to "(None)"
-                
-            if node.end_point:
-                index = self.end_point_combo.findData(node.end_point)
-                if index >= 0:
-                    self.end_point_combo.setCurrentIndex(index)
-                else:
-                    self.end_point_combo.setCurrentIndex(0)  # Set to "(None)"
-            else:
-                self.end_point_combo.setCurrentIndex(0)  # Set to "(None)"
-            
-        elif isinstance(node, ShapeNode):
-            self.shape_group.show()
-            # Load shape properties
-            self.shape_codes_edit.setText(','.join(f'"{c}"' for c in node.shape_codes))
-            
-        elif isinstance(node, DecisionNode):
-            self.decision_group.show()
-            # Load decision properties
-            self.condition_edit.setText(node.condition)
-        
-        # Re-enable signals
-        self.block_all_signals(False)
-        self.blockSignals(False)
+    
+    def update_preview(self):
+        """Trigger preview update in main window"""
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, 'update_preview'):
+                widget.update_preview()
+                break
+            widget = widget.parentWidget()
 
     def update_node_combos(self):
         """Update combo boxes with nodes from flowchart"""

@@ -277,7 +277,8 @@ class FlowchartView(BaseGraphicsView):  # Changed from QGraphicsView
             
     def create_start_node(self):
         """Create initial START node"""
-        start_node = FlowchartNode("START", "Start", "START")
+        from models import StartNode
+        start_node = StartNode("START", "START")
         self.scene.add_flowchart_node(start_node, 50, 50)
         
     def on_node_selected(self, node):

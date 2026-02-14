@@ -13,6 +13,7 @@ from preview import GeometryPreview
 from panels import PropertiesPanel, ParametersPanel, ToolboxPanel
 from models import PointNode, LinkNode, ShapeNode, DecisionNode
 from flowchart import FlowchartNodeItem
+from models import create_node_from_dict
 
 
 class ComponentDesigner(QMainWindow):
@@ -258,11 +259,24 @@ class ComponentDesigner(QMainWindow):
     def new_file(self):
         """Create new component"""
         if self.check_save_changes():
+            # Clear flowchart scene
             self.flowchart.scene.clear()
             self.flowchart.scene.nodes.clear()
+            self.flowchart.scene.connections.clear()
+            self.flowchart.scene.arrows.clear()
+            self.flowchart.scene.last_added_node = None
+            
+            # Reset counter
             self.flowchart.node_counter = 0
+            
+            # Clear preview
             self.preview.scene.clear()
             self.preview.setup_scene()
+            
+            # Create START node again
+            self.flowchart.create_start_node()
+            
+            # Reset file info
             self.current_file = None
             self.modified = False
             self.statusBar().showMessage("New component created")
@@ -377,82 +391,27 @@ class ComponentDesigner(QMainWindow):
                 node_map = {}  # Map old IDs to new node objects
                 
                 for node_data in data['nodes']:
-                    node = None
-                    node_type = node_data.get('type')
+                    node = create_node_from_dict(node_data)
+                    x = node_data.get('x', 0)
+                    y = node_data.get('y', 0)
                     
-                    if node_type == 'Point':
-                        from models import PointGeometryType
-                        node = PointNode(node_data['id'], node_data['name'])
-                        # Load geometry type
-                        geo_type_str = node_data.get('geometry_type', 'Offset and Elevation')
-                        for gt in PointGeometryType:
-                            if gt.value == geo_type_str:
-                                node.geometry_type = gt
-                                break
-                        node.offset = node_data.get('offset', 0.0)
-                        node.elevation = node_data.get('elevation', 0.0)
-                        node.delta_x = node_data.get('delta_x', 0.0)
-                        node.delta_y = node_data.get('delta_y', 0.0)
-                        node.slope = node_data.get('slope', 0.0)
-                        node.from_point = node_data.get('from_point')
-                        node.point_codes = node_data.get('point_codes', [])
-                        node.add_link_to_from = node_data.get('add_link_to_from', True)
-                        
-                    elif node_type == 'Link':
-                        from models import LinkType
-                        node = LinkNode(node_data['id'], node_data['name'])
-                        # Load link type
-                        link_type_str = node_data.get('link_type', 'Line')
-                        for lt in LinkType:
-                            if lt.value == link_type_str:
-                                node.link_type = lt
-                                break
-                        node.start_point = node_data.get('start_point')
-                        node.end_point = node_data.get('end_point')
-                        node.link_codes = node_data.get('link_codes', [])
-                        node.material = node_data.get('material', 'Asphalt')
-                        node.thickness = node_data.get('thickness', 0.0)
-                        
-                    elif node_type == 'Shape':
-                        node = ShapeNode(node_data['id'], node_data['name'])
-                        node.shape_codes = node_data.get('shape_codes', [])
-                        node.links = node_data.get('links', [])
-                        node.material = node_data.get('material', 'Asphalt')
-                        
-                    elif node_type == 'Decision':
-                        node = DecisionNode(node_data['id'], node_data['name'])
-                        node.condition = node_data.get('condition', '')
-                        
-                    elif node_type == 'Start':
-                        from models import FlowchartNode
-                        node = FlowchartNode(node_data['id'], node_type, node_data['name'])
-                        
-                    else:
-                        # Generic node for other types
-                        from models import FlowchartNode
-                        node = FlowchartNode(node_data['id'], node_type, node_data['name'])
+                    # Add node without auto-connecting
+                    self.flowchart.scene.nodes[node.id] = node
+                    node.x = x
+                    node.y = y
+                    node_item = FlowchartNodeItem(node, x, y)
+                    self.flowchart.scene.addItem(node_item)
                     
-                    if node:
-                        x = node_data.get('x', 0)
-                        y = node_data.get('y', 0)
-                        
-                        # Add node without auto-connecting
-                        self.flowchart.scene.nodes[node.id] = node
-                        node.x = x
-                        node.y = y
-                        node_item = FlowchartNodeItem(node, x, y)
-                        self.flowchart.scene.addItem(node_item)
-                        
-                        node_map[node.id] = node
-                        
-                        # Update counter
-                        if node.id.startswith('N'):
-                            try:
-                                num = int(node.id[1:])
-                                if num > self.flowchart.node_counter:
-                                    self.flowchart.node_counter = num
-                            except:
-                                pass
+                    node_map[node.id] = node
+                    
+                    # Update counter
+                    if node.id.startswith('N'):
+                        try:
+                            num = int(node.id[1:])
+                            if num > self.flowchart.node_counter:
+                                self.flowchart.node_counter = num
+                        except:
+                            pass
             
             # Load connections
             if 'connections' in data:
