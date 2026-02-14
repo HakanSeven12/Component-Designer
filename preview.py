@@ -258,10 +258,20 @@ class GeometryPreview(BaseGraphicsView):
                         line_item = PreviewLineItem(x1, y1, x2, y2, node)
                         self.scene.addItem(line_item)
                         
+                        # Add link name label
+                        mid_x = (x1 + x2) / 2
+                        mid_y = (y1 + y2) / 2
+                        name_text = PreviewTextItem(node.name, node)
+                        name_font = QFont()
+                        name_font.setPointSize(8)
+                        name_font.setBold(True)
+                        name_text.setFont(name_font)
+                        name_text.setPos(mid_x, mid_y - 30)
+                        name_text.setDefaultTextColor(QColor(0, 100, 0))
+                        self.scene.addItem(name_text)
+                        
                         # Add link codes if enabled
                         if self.show_codes and node.link_codes:
-                            mid_x = (x1 + x2) / 2
-                            mid_y = (y1 + y2) / 2
                             code_text = PreviewTextItem(f"[{','.join(node.link_codes)}]", node)
                             code_font = QFont()
                             code_font.setPointSize(7)
@@ -292,9 +302,19 @@ class GeometryPreview(BaseGraphicsView):
                         )
                         shape_item.setData(0, node)
                         
+                        # Add shape name label
+                        center = polygon.boundingRect().center()
+                        name_text = PreviewTextItem(node.name, node)
+                        name_font = QFont()
+                        name_font.setPointSize(8)
+                        name_font.setBold(True)
+                        name_text.setFont(name_font)
+                        name_text.setPos(center.x() - 20, center.y() - 25)
+                        name_text.setDefaultTextColor(QColor(80, 80, 0))
+                        self.scene.addItem(name_text)
+                        
                         # Add shape codes
                         if self.show_codes and node.shape_codes:
-                            center = polygon.boundingRect().center()
                             code_text = PreviewTextItem(f"[{','.join(node.shape_codes)}]", node)
                             code_font = QFont()
                             code_font.setPointSize(7)
