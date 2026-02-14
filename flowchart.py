@@ -258,6 +258,23 @@ class FlowchartView(BaseGraphicsView):  # Changed from QGraphicsView
         """Restore drag mode after panning"""
         self.setDragMode(QGraphicsView.RubberBandDrag)
         
+    def select_node_visually(self, node):
+        """Select a node visually in the flowchart"""
+        self.selected_node = node
+        
+        # Clear all selections first
+        for item in self.scene.items():
+            if isinstance(item, FlowchartNodeItem):
+                item.setSelected(False)
+        
+        # Select the target node
+        for item in self.scene.items():
+            if isinstance(item, FlowchartNodeItem) and item.node == node:
+                item.setSelected(True)
+                # Ensure it's visible
+                self.centerOn(item)
+                break
+            
     def create_start_node(self):
         """Create initial START node"""
         start_node = FlowchartNode("START", "Start", "START")

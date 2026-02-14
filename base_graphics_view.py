@@ -16,6 +16,13 @@ class BaseGraphicsView(QGraphicsView):
         self.is_panning = False
         self.pan_start_pos = None
         
+        # Selection tracking
+        self.selected_node = None
+        
+    def select_node_visually(self, node):
+        """Select a node visually in this view - to be overridden by subclass"""
+        self.selected_node = node
+        
     def mousePressEvent(self, event):
         """Handle mouse press for panning"""
         if event.button() == Qt.MiddleButton:

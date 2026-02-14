@@ -2,20 +2,124 @@
 Preview Module for Component Designer
 Handles geometry preview with Layout and Roadway modes
 """
-from PySide2.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPolygonItem
+from PySide2.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPolygonItem, QGraphicsItem, QGraphicsTextItem
 from PySide2.QtCore import Qt, QPointF
-from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF
+from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF, QFont
 
 from models import PointNode, LinkNode, ShapeNode
 from base_graphics_view import BaseGraphicsView
 
 
-class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
+class PreviewTextItem(QGraphicsTextItem):
+    """Selectable text item in preview"""
+    
+    def __init__(self, text, node, parent=None):
+        super().__init__(text, parent)
+        self.node = node
+        self.setFlags(QGraphicsItem.ItemIsSelectable)
+        self.setData(0, node)
+        
+        # Store original color
+        self.normal_color = self.defaultTextColor()
+        self.selected_color = QColor(255, 120, 0)
+        
+    def mousePressEvent(self, event):
+        """Handle mouse press - select node"""
+        super().mousePressEvent(event)
+        if self.scene():
+            self.scene().node_clicked.emit(self.node)
+            
+    def set_selected_style(self, selected):
+        """Update visual style based on selection"""
+        if selected:
+            self.setDefaultTextColor(self.selected_color)
+            self.setZValue(10)  # Bring to front
+        else:
+            self.setDefaultTextColor(self.normal_color)
+            self.setZValue(0)
+
+
+class PreviewPointItem(QGraphicsEllipseItem):
+    """Selectable point item in preview"""
+    
+    def __init__(self, x, y, node, parent=None):
+        super().__init__(x-4, y-4, 8, 8, parent)
+        self.node = node
+        self.setFlags(QGraphicsItem.ItemIsSelectable)
+        self.setPen(QPen(Qt.black, 1))
+        self.setBrush(QBrush(QColor(0, 120, 255)))
+        self.setData(0, node)
+        
+        # Normal and selected styles
+        self.normal_pen = QPen(Qt.black, 1)
+        self.normal_brush = QBrush(QColor(0, 120, 255))
+        self.selected_pen = QPen(QColor(255, 120, 0), 3)
+        self.selected_brush = QBrush(QColor(255, 200, 100))
+        
+    def mousePressEvent(self, event):
+        """Handle mouse press - select node"""
+        super().mousePressEvent(event)
+        if self.scene():
+            self.scene().node_clicked.emit(self.node)
+            
+    def set_selected_style(self, selected):
+        """Update visual style based on selection"""
+        if selected:
+            self.setPen(self.selected_pen)
+            self.setBrush(self.selected_brush)
+            self.setZValue(10)  # Bring to front
+        else:
+            self.setPen(self.normal_pen)
+            self.setBrush(self.normal_brush)
+            self.setZValue(0)
+
+
+class PreviewLineItem(QGraphicsLineItem):
+    """Selectable line item in preview"""
+    
+    def __init__(self, x1, y1, x2, y2, node, parent=None):
+        super().__init__(x1, y1, x2, y2, parent)
+        self.node = node
+        self.setFlags(QGraphicsItem.ItemIsSelectable)
+        self.setPen(QPen(QColor(0, 150, 0), 2))
+        self.setData(0, node)
+        
+        # Normal and selected styles
+        self.normal_pen = QPen(QColor(0, 150, 0), 2)
+        self.selected_pen = QPen(QColor(255, 120, 0), 4)
+        
+    def mousePressEvent(self, event):
+        """Handle mouse press - select node"""
+        super().mousePressEvent(event)
+        if self.scene():
+            self.scene().node_clicked.emit(self.node)
+            
+    def set_selected_style(self, selected):
+        """Update visual style based on selection"""
+        if selected:
+            self.setPen(self.selected_pen)
+            self.setZValue(5)
+        else:
+            self.setPen(self.normal_pen)
+            self.setZValue(0)
+
+
+class PreviewScene(QGraphicsScene):
+    """Custom scene for preview with selection support"""
+    
+    from PySide2.QtCore import Signal
+    node_clicked = Signal(object)
+    
+    def __init__(self):
+        super().__init__()
+
+
+class GeometryPreview(BaseGraphicsView):
     """Preview panel showing the component geometry"""
     
     def __init__(self):
         super().__init__()
-        self.scene = QGraphicsScene()
+        self.scene = PreviewScene()
         self.setScene(self.scene)
         self.setRenderHint(QPainter.Antialiasing)
         
@@ -30,9 +134,31 @@ class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
         
         self.setup_scene()
         
+        # Connect scene signals
+        self.scene.node_clicked.connect(self.on_node_clicked)
+        
+    def on_node_clicked(self, node):
+        """Handle node click in preview"""
+        # Propagate selection to main window
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, 'sync_selection_from_preview'):
+                widget.sync_selection_from_preview(node)
+                break
+            widget = widget.parentWidget()
+        
     def restore_drag_mode(self):
         """Restore drag mode after panning"""
         self.setDragMode(QGraphicsView.NoDrag)
+        
+    def select_node_visually(self, node):
+        """Select a node visually in the preview"""
+        self.selected_node = node
+        
+        # Update visual style of all items
+        for item in self.scene.items():
+            if hasattr(item, 'set_selected_style'):
+                item.set_selected_style(item.node == node)
         
     def setup_scene(self):
         """Initialize preview scene"""
@@ -65,11 +191,11 @@ class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
         """Update preview based on flowchart"""
         # Clear existing geometry (keep grid and axes)
         for item in list(self.scene.items()):
-            if isinstance(item, (QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPolygonItem)):
+            if isinstance(item, (PreviewPointItem, PreviewLineItem, PreviewTextItem, QGraphicsPolygonItem)):
                 if item.data(0) is not None:  # Has node data
                     self.scene.removeItem(item)
             elif hasattr(item, 'toPlainText'):  # Text items with node data
-                if item.data(0) is not None:
+                if item.data(0) is not None and not isinstance(item, PreviewTextItem):
                     self.scene.removeItem(item)
         
         self.points.clear()
@@ -92,17 +218,29 @@ class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
                 x = pos[0] * self.scale_factor
                 y = -pos[1] * self.scale_factor  # Invert Y for screen coordinates
                 
-                circle = self.scene.addEllipse(x-4, y-4, 8, 8,
-                                              QPen(Qt.black, 1),
-                                              QBrush(QColor(0, 120, 255)))
-                circle.setData(0, node)
+                # Create selectable point item
+                point_item = PreviewPointItem(x, y, node)
+                self.scene.addItem(point_item)
+                
+                # Add node name label with PreviewTextItem
+                name_text = PreviewTextItem(node.name, node)
+                name_font = QFont()
+                name_font.setPointSize(8)
+                name_font.setBold(True)
+                name_text.setFont(name_font)
+                name_text.setPos(x + 8, y - 25)
+                name_text.setDefaultTextColor(QColor(0, 0, 180))
+                self.scene.addItem(name_text)
                 
                 # Add point codes if enabled
                 if self.show_codes and node.point_codes:
-                    code_text = self.scene.addText(f"[{','.join(node.point_codes)}]")
-                    code_text.setPos(x + 8, y - 20)
+                    code_text = PreviewTextItem(f"[{','.join(node.point_codes)}]", node)
+                    code_font = QFont()
+                    code_font.setPointSize(7)
+                    code_text.setFont(code_font)
+                    code_text.setPos(x + 8, y - 10)
                     code_text.setDefaultTextColor(QColor(0, 0, 255))
-                    code_text.setData(0, node)
+                    self.scene.addItem(code_text)
                     
             elif isinstance(node, LinkNode):
                 # Draw link between points
@@ -116,18 +254,21 @@ class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
                         x2 = end_pos[0] * self.scale_factor
                         y2 = -end_pos[1] * self.scale_factor
                         
-                        line = self.scene.addLine(x1, y1, x2, y2,
-                                                 QPen(QColor(0, 150, 0), 2))
-                        line.setData(0, node)
+                        # Create selectable line item
+                        line_item = PreviewLineItem(x1, y1, x2, y2, node)
+                        self.scene.addItem(line_item)
                         
                         # Add link codes if enabled
                         if self.show_codes and node.link_codes:
                             mid_x = (x1 + x2) / 2
                             mid_y = (y1 + y2) / 2
-                            code_text = self.scene.addText(f"[{','.join(node.link_codes)}]")
+                            code_text = PreviewTextItem(f"[{','.join(node.link_codes)}]", node)
+                            code_font = QFont()
+                            code_font.setPointSize(7)
+                            code_text.setFont(code_font)
                             code_text.setPos(mid_x, mid_y - 15)
                             code_text.setDefaultTextColor(QColor(0, 150, 0))
-                            code_text.setData(0, node)
+                            self.scene.addItem(code_text)
                             
             elif isinstance(node, ShapeNode):
                 # Draw shape (closed polygon)
@@ -154,7 +295,10 @@ class GeometryPreview(BaseGraphicsView):  # Changed from QGraphicsView
                         # Add shape codes
                         if self.show_codes and node.shape_codes:
                             center = polygon.boundingRect().center()
-                            code_text = self.scene.addText(f"[{','.join(node.shape_codes)}]")
+                            code_text = PreviewTextItem(f"[{','.join(node.shape_codes)}]", node)
+                            code_font = QFont()
+                            code_font.setPointSize(7)
+                            code_text.setFont(code_font)
                             code_text.setPos(center.x() - 30, center.y() - 10)
                             code_text.setDefaultTextColor(QColor(100, 100, 0))
-                            code_text.setData(0, node)
+                            self.scene.addItem(code_text)

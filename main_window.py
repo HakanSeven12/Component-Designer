@@ -217,7 +217,16 @@ class ComponentDesigner(QMainWindow):
         """Handle flowchart node selection"""
         self.properties.load_node(node)
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
+        # Sync selection to preview
+        self.preview.select_node_visually(node)
         
+    def sync_selection_from_preview(self, node):
+        """Handle selection from preview - sync to flowchart"""
+        self.properties.load_node(node)
+        self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
+        # Sync selection to flowchart
+        self.flowchart.select_node_visually(node)
+
     def add_element_to_flowchart(self, element_type):
         """Add element to flowchart"""
         if element_type == "Point":
