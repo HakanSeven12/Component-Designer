@@ -185,12 +185,14 @@ class FlowchartScene(QGraphicsScene):
         node_item = FlowchartNodeItem(node, x, y)
         self.addItem(node_item)
         
-        # Connect to previous node if exists
-        if self.last_added_node and self.last_added_node != node:
+        # Connect to previous node if exists and not a START node
+        from models import StartNode
+        if self.last_added_node and self.last_added_node != node and not isinstance(node, StartNode):
             self.connect_nodes(self.last_added_node, node)
         
-        # Update last added node
-        self.last_added_node = node
+        # Update last added node (don't update for START nodes)
+        if not isinstance(node, StartNode):
+            self.last_added_node = node
         
         return node_item
         

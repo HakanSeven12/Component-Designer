@@ -389,6 +389,7 @@ class ComponentDesigner(QMainWindow):
             # Load nodes
             if 'nodes' in data:
                 node_map = {}  # Map old IDs to new node objects
+                last_non_start_node = None  # Track last non-start node
                 
                 for node_data in data['nodes']:
                     node = create_node_from_dict(node_data)
@@ -404,6 +405,11 @@ class ComponentDesigner(QMainWindow):
                     
                     node_map[node.id] = node
                     
+                    # Track last non-start node for continuation
+                    from models import StartNode
+                    if not isinstance(node, StartNode):
+                        last_non_start_node = node
+                    
                     # Update counter
                     if node.id.startswith('N'):
                         try:
@@ -412,6 +418,9 @@ class ComponentDesigner(QMainWindow):
                                 self.flowchart.node_counter = num
                         except:
                             pass
+                
+                # Set last_added_node to continue chain
+                self.flowchart.scene.last_added_node = last_non_start_node
             
             # Load connections
             if 'connections' in data:
