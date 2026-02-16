@@ -10,7 +10,7 @@ from PySide2.QtCore import Qt
 
 from flowchart import FlowchartView
 from preview import GeometryPreview
-from panels import PropertiesPanel, ParametersPanel, ToolboxPanel
+from panels import ParametersPanel, ToolboxPanel
 from models import PointNode, LinkNode, ShapeNode, DecisionNode
 from flowchart import FlowchartNodeItem
 from models import create_node_from_dict
@@ -95,18 +95,8 @@ class ComponentDesigner(QMainWindow):
         center_splitter.addWidget(preview_container)
         center_splitter.setSizes([400, 400])
         
-        # Right side: Properties and Parameters
+        # Right side: Only Parameters (removed Properties)
         right_splitter = QSplitter(Qt.Vertical)
-        
-        properties_container = QWidget()
-        properties_layout = QVBoxLayout()
-        properties_label = QLabel("Properties")
-        properties_label.setStyleSheet("font-weight: bold; background: #e0e0e0; padding: 5px;")
-        self.properties = PropertiesPanel()
-        properties_layout.addWidget(properties_label)
-        properties_layout.addWidget(self.properties)
-        properties_layout.setContentsMargins(0, 0, 0, 0)
-        properties_container.setLayout(properties_layout)
         
         parameters_container = QWidget()
         parameters_layout = QVBoxLayout()
@@ -118,9 +108,8 @@ class ComponentDesigner(QMainWindow):
         parameters_layout.setContentsMargins(0, 0, 0, 0)
         parameters_container.setLayout(parameters_layout)
         
-        right_splitter.addWidget(properties_container)
         right_splitter.addWidget(parameters_container)
-        right_splitter.setSizes([400, 300])
+        right_splitter.setSizes([700])  # Single panel, give it full height
         
         # Main horizontal splitter
         main_splitter = QSplitter(Qt.Horizontal)
@@ -211,19 +200,16 @@ class ComponentDesigner(QMainWindow):
         self.toolbox.element_selected.connect(self.add_element_to_flowchart)
         self.show_codes_check.stateChanged.connect(self.toggle_codes)
         self.show_comments_check.stateChanged.connect(self.toggle_comments)
-        self.flowchart.scene.node_selected.connect(self.on_flowchart_node_selected)
         self.flowchart.scene.preview_update_requested.connect(self.update_preview)
-        
+
     def on_flowchart_node_selected(self, node):
         """Handle flowchart node selection"""
-        self.properties.load_node(node)
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
         # Sync selection to preview
         self.preview.select_node_visually(node)
         
     def sync_selection_from_preview(self, node):
         """Handle selection from preview - sync to flowchart"""
-        self.properties.load_node(node)
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
         # Sync selection to flowchart
         self.flowchart.select_node_visually(node)

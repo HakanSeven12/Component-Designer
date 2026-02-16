@@ -18,34 +18,62 @@ class PortWidget(QWidget):
     PORT_COLORS = {
         'from': QColor(100, 200, 100),    # Green for output
         'to': QColor(255, 150, 50),       # Orange for input
-        'start': QColor(100, 150, 255),   # Blue for link start
-        'end': QColor(200, 100, 255),     # Purple for link end
+        'start': QColor(100, 150, 255),   # Blue for link start (input)
+        'end': QColor(200, 100, 255),     # Purple for link end (output)
+    }
+    
+    PORT_LABELS = {
+        'from': 'OUT',
+        'to': 'IN',
+        'start': 'IN',
+        'end': 'OUT'
     }
     
     def __init__(self, node, port_type, parent=None):
         super().__init__(parent)
         self.node = node
         self.port_type = port_type  # 'from', 'to', 'start', 'end'
-        self.setFixedSize(16, 16)
-        self.setCursor(Qt.CrossCursor)
+        self.is_hovered = False
+        self.setFixedHeight(24)
+        self.setMinimumWidth(50)
+        self.setCursor(Qt.PointingHandCursor)
         
     def paintEvent(self, event):
-        """Draw the port as a circle"""
+        """Draw the port as a button with label"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
         # Port color based on type
         color = self.PORT_COLORS.get(self.port_type, QColor(150, 150, 150))
         
-        # Draw outer circle
+        # Lighten color on hover
+        if self.is_hovered:
+            color = color.lighter(120)
+        
+        # Draw button background
         painter.setPen(QPen(QColor(60, 60, 60), 2))
         painter.setBrush(QBrush(color))
-        painter.drawEllipse(2, 2, 12, 12)
+        painter.drawRoundedRect(2, 2, self.width() - 4, self.height() - 4, 4, 4)
         
-        # Draw inner highlight
-        painter.setBrush(QBrush(QColor(255, 255, 255, 100)))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(4, 4, 5, 5)
+        # Draw label
+        painter.setPen(QPen(Qt.white))
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(7)
+        painter.setFont(font)
+        
+        label = self.PORT_LABELS.get(self.port_type, self.port_type.upper())
+        painter.drawText(self.rect(), Qt.AlignCenter, label)
+    
+    def enterEvent(self, event):
+        """Handle mouse enter"""
+        self.is_hovered = True
+        self.update()
+        
+    def leaveEvent(self, event):
+        """Handle mouse leave"""
+        self.is_hovered = False
+        self.update()
     
     def mousePressEvent(self, event):
         """Handle port click"""
@@ -204,29 +232,35 @@ class FlowchartNodeItem(QGraphicsRectItem):
         ports_widget = QWidget()
         ports_layout = QHBoxLayout()
         ports_layout.setContentsMargins(10, 8, 10, 8)
+        ports_layout.setSpacing(8)
         
-        # Determine port layout based on types
-        # Point nodes: to (left), from (right)
-        # Link nodes: start (left), end (right)
-        # Start node: from (right only)
+        # Separate input and output ports
+        input_ports = []
+        output_ports = []
         
-        if 'to' in port_types or 'start' in port_types:
-            # Left port
-            left_port_type = 'to' if 'to' in port_types else 'start'
-            left_port = PortWidget(self.node, left_port_type)
-            left_port.port_clicked.connect(self.on_port_clicked)
-            self.ports[left_port_type] = left_port
-            ports_layout.addWidget(left_port)
+        for port_type in port_types:
+            if port_type in ['to', 'start']:
+                input_ports.append(port_type)
+            elif port_type in ['from', 'end']:
+                output_ports.append(port_type)
         
-        ports_layout.addStretch()
+        # Add input ports on the left
+        for port_type in input_ports:
+            port = PortWidget(self.node, port_type)
+            port.port_clicked.connect(self.on_port_clicked)
+            self.ports[port_type] = port
+            ports_layout.addWidget(port)
         
-        if 'from' in port_types or 'end' in port_types:
-            # Right port
-            right_port_type = 'from' if 'from' in port_types else 'end'
-            right_port = PortWidget(self.node, right_port_type)
-            right_port.port_clicked.connect(self.on_port_clicked)
-            self.ports[right_port_type] = right_port
-            ports_layout.addWidget(right_port)
+        # Add spacer
+        if input_ports and output_ports:
+            ports_layout.addStretch()
+        
+        # Add output ports on the right
+        for port_type in output_ports:
+            port = PortWidget(self.node, port_type)
+            port.port_clicked.connect(self.on_port_clicked)
+            self.ports[port_type] = port
+            ports_layout.addWidget(port)
         
         ports_widget.setLayout(ports_layout)
         body_layout.addWidget(ports_widget)
@@ -237,11 +271,15 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.scene().handle_port_click(self, port_type)
     
     def get_port_scene_pos(self, port_type):
-        """Get port position in scene coordinates"""
+        """Get port position in scene coordinates (center of port button)"""
         if port_type in self.ports:
             port = self.ports[port_type]
-            port_center = port.rect().center()
-            widget_pos = port.mapTo(self.container_widget, port_center)
+            # Get center point of the port widget
+            port_rect = port.rect()
+            port_center = QPointF(port_rect.center())
+            # Map to container widget
+            widget_pos = port.mapTo(self.container_widget, port_center.toPoint())
+            # Map to scene
             proxy_pos = self.proxy.mapToScene(widget_pos)
             return proxy_pos
         return self.scenePos()

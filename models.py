@@ -58,8 +58,14 @@ class FlowchartNode(ABC):
     def get_port_types(self):
         """Get list of port types this node has
         
+        Port types:
+        - 'to': Input port (receives data)
+        - 'from': Output port (sends data)
+        - 'start': Link start input port
+        - 'end': Link end output port
+        
         Returns:
-            list: List of port type strings ('from', 'to', 'start', 'end')
+            list: List of port type strings
         """
         return []  # Default: no ports
         

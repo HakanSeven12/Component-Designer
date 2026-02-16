@@ -175,7 +175,7 @@ class FlowchartScene(QGraphicsScene):
         node.x = x
         node.y = y
         
-        # Create draggable node item
+        # Create draggable node item AT THE SPECIFIED POSITION
         node_item = FlowchartNodeItem(node, x, y)
         self.addItem(node_item)
         
@@ -275,6 +275,40 @@ class FlowchartScene(QGraphicsScene):
                 elif to_port == 'end':
                     to_node.end_point = from_node.id
 
+    def update_port_wires(self, moved_node_item):
+        """Update wire positions when a node is moved"""
+        for wire_data in self.port_wires:
+            if wire_data['from_item'] == moved_node_item:
+                # Update start position
+                new_start_pos = moved_node_item.get_port_scene_pos(wire_data['from_port'])
+                wire_data['wire'].start_pos = new_start_pos
+                wire_data['wire'].update_path()
+            
+            if wire_data['to_item'] == moved_node_item:
+                # Update end position
+                new_end_pos = moved_node_item.get_port_scene_pos(wire_data['to_port'])
+                wire_data['wire'].end_pos = new_end_pos
+                wire_data['wire'].update_path()
+
+    def request_preview_update(self):
+        """Request preview update"""
+        self.preview_update_requested.emit()
+    
+    def cancel_connection(self):
+        """Cancel connection in progress"""
+        if self.temp_wire:
+            self.removeItem(self.temp_wire)
+            self.temp_wire = None
+        
+        self.connection_in_progress = False
+        self.connection_start_item = None
+        self.connection_start_port = None
+        
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for connection preview"""
+        if self.connection_in_progress and self.temp_wire:
+            self.temp_wire.set_end_pos(event.scenePos())
+        super().mouseMoveEvent(event)
 
 class FlowchartView(BaseGraphicsView):
     """Flowchart editor view"""
@@ -367,20 +401,20 @@ class FlowchartView(BaseGraphicsView):
                 node = self.create_point_node_at(pos.x(), pos.y())
                 node.name = f"PP{self.node_counter}"
             elif element_type in ["Variable", "Switch", "Auxiliary Point", 
-                                 "Auxiliary Line", "Auxiliary Curve", "Mark Point", "Comment"]:
+                                "Auxiliary Line", "Auxiliary Curve", "Mark Point", "Comment"]:
                 # Create generic nodes for these types
                 node = self.create_generic_node_at(element_type, pos.x(), pos.y())
             
             if node:
                 event.acceptProposedAction()
                 # Notify that node was created
-                if hasattr(self, 'parentWidget'):
-                    parent = self.parentWidget()
+                if hasattr(self, 'parent') and self.parent():
+                    parent = self.parent()
                     # Import here to avoid circular dependency
                     from main_window import ComponentDesigner
                     while parent and not isinstance(parent, ComponentDesigner):
-                        parent = parent.parentWidget()
-                    if parent:
+                        parent = parent.parent()
+                    if parent and hasattr(parent, 'statusBar'):
                         parent.statusBar().showMessage(f"{element_type} added")
             else:
                 event.ignore()
