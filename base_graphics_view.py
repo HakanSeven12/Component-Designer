@@ -81,28 +81,45 @@ class BaseGraphicsView(QGraphicsView):
             super().mouseReleaseEvent(event)
             
     def wheelEvent(self, event):
-        """Handle zoom with mouse wheel"""
+        """Handle zoom with mouse wheel and scrolling with modifiers"""
+        # Check if Ctrl is pressed for vertical pan
+        if event.modifiers() & Qt.ControlModifier:
+            # Vertical pan with Ctrl+wheel
+            delta = event.angleDelta().y()
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() - delta
+            )
         # Check if Shift is pressed for horizontal pan
-        if event.modifiers() & Qt.ShiftModifier:
+        elif event.modifiers() & Qt.ShiftModifier:
             # Horizontal pan with Shift+wheel
             delta = event.angleDelta().y()
             self.horizontalScrollBar().setValue(
                 self.horizontalScrollBar().value() - delta
             )
-        # Check if Ctrl is pressed for zoom
-        elif event.modifiers() & Qt.ControlModifier:
-            # Zoom with Ctrl+wheel
+        else:
+            # Default: Zoom with wheel (mouse position as anchor)
             zoom_factor = 1.15
+            
+            # Get mouse position in scene coordinates
+            scene_pos = self.mapToScene(event.pos())
+            
+            # Perform zoom
             if event.angleDelta().y() > 0:
+                # Zoom in
                 self.scale(zoom_factor, zoom_factor)
             else:
-                self.scale(1/zoom_factor, 1/zoom_factor)
-        else:
-            # Default: vertical pan with wheel
-            delta = event.angleDelta().y()
-            self.verticalScrollBar().setValue(
-                self.verticalScrollBar().value() - delta
-            )
+                # Zoom out
+                self.scale(1.0 / zoom_factor, 1.0 / zoom_factor)
+            
+            # Get the new mouse position in view coordinates after zoom
+            new_view_pos = self.mapFromScene(scene_pos)
+            
+            # Calculate offset and adjust scrollbars
+            delta = new_view_pos - event.pos()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() + delta.y())
+            
+            event.accept()
             
     def restore_drag_mode(self):
         """Restore drag mode after panning - to be overridden by subclass"""

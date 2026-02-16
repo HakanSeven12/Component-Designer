@@ -255,6 +255,58 @@ class FlowchartScene(QGraphicsScene):
             self.last_added_node = node
         
         return node_item
+    def delete_selected_node(self):
+        """Delete the currently selected node and its connections"""
+        from models import StartNode
+        
+        # Find selected node item
+        selected_items = [item for item in self.selectedItems() 
+                        if isinstance(item, FlowchartNodeItem)]
+        
+        if not selected_items:
+            return False
+        
+        node_item = selected_items[0]
+        node = node_item.node
+        
+        # Don't allow deleting START node
+        if isinstance(node, StartNode):
+            return False
+        
+        # Remove all connections involving this node
+        wires_to_remove = []
+        for wire_data in self.port_wires:
+            if wire_data['from_item'] == node_item or wire_data['to_item'] == node_item:
+                wires_to_remove.append(wire_data)
+        
+        for wire_data in wires_to_remove:
+            self.removeItem(wire_data['wire'])
+            self.port_wires.remove(wire_data)
+        
+        # Remove from connections list
+        connections_to_remove = []
+        for conn in self.connections:
+            if conn['from'] == node.id or conn['to'] == node.id:
+                connections_to_remove.append(conn)
+        
+        for conn in connections_to_remove:
+            self.connections.remove(conn)
+        
+        # Remove node from nodes dict
+        if node.id in self.nodes:
+            del self.nodes[node.id]
+        
+        # Remove graphics item from scene
+        self.removeItem(node_item)
+        
+        # Update last_added_node if this was it
+        if self.last_added_node == node:
+            self.last_added_node = None
+        
+        # Request preview update
+        self.request_preview_update()
+        
+        return True
     
     def update_port_wires(self, moved_node_item):
         """Update wire positions when a node is moved"""

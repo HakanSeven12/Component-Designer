@@ -585,3 +585,14 @@ class FlowchartNodeItem(QGraphicsRectItem):
     def mouseDoubleClickEvent(self, event):
         """Handle double click - edit name"""
         self.edit_name(event)
+
+    def keyPressEvent(self, event):
+        """Handle key press events"""
+        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+            # Delete this node
+            if self.scene():
+                if self.scene().delete_selected_node():
+                    event.accept()
+                    return
+        
+        super().keyPressEvent(event)
