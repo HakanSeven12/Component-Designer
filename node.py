@@ -29,10 +29,11 @@ class PortWidget(QWidget):
         'end': 'END'
     }
     
-    def __init__(self, node, port_type, parent=None):
+    def __init__(self, node, port_type, port_direction, parent=None):
         super().__init__(parent)
         self.node = node
         self.port_type = port_type  # 'from', 'to', 'start', 'end'
+        self.port_direction = port_direction  # 'input' or 'output'
         self.is_hovered = False
         self.setFixedHeight(24)
         self.setMinimumWidth(50)
@@ -241,22 +242,39 @@ class FlowchartNodeItem(QGraphicsRectItem):
         output_ports = self.node.get_output_ports()
         
         # Add input ports on the left
-        for port_type in input_ports:
-            port = PortWidget(self.node, port_type)
-            port.port_clicked.connect(self.on_port_clicked)
-            self.ports[port_type] = port
-            ports_layout.addWidget(port)
+        if input_ports:
+            input_container = QWidget()
+            input_layout = QVBoxLayout()
+            input_layout.setContentsMargins(0, 0, 0, 0)
+            input_layout.setSpacing(4)
+            
+            for port_type in input_ports:
+                port = PortWidget(self.node, port_type, 'input')
+                port.port_clicked.connect(self.on_port_clicked)
+                self.ports[port_type] = port
+                input_layout.addWidget(port)
+            
+            input_container.setLayout(input_layout)
+            ports_layout.addWidget(input_container)
         
-        # Add spacer between input and output ports
-        if input_ports and output_ports:
-            ports_layout.addStretch()
+        # Add spacer in the middle
+        ports_layout.addStretch()
         
         # Add output ports on the right
-        for port_type in output_ports:
-            port = PortWidget(self.node, port_type)
-            port.port_clicked.connect(self.on_port_clicked)
-            self.ports[port_type] = port
-            ports_layout.addWidget(port)
+        if output_ports:
+            output_container = QWidget()
+            output_layout = QVBoxLayout()
+            output_layout.setContentsMargins(0, 0, 0, 0)
+            output_layout.setSpacing(4)
+            
+            for port_type in output_ports:
+                port = PortWidget(self.node, port_type, 'output')
+                port.port_clicked.connect(self.on_port_clicked)
+                self.ports[port_type] = port
+                output_layout.addWidget(port)
+            
+            output_container.setLayout(output_layout)
+            ports_layout.addWidget(output_container)
         
         ports_widget.setLayout(ports_layout)
         body_layout.addWidget(ports_widget)
