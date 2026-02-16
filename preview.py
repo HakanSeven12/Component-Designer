@@ -186,12 +186,75 @@ class GeometryPreview(BaseGraphicsView):
         origin_text = self.scene.addText("0,0")
         origin_text.setPos(5, 5)
         origin_text.setDefaultTextColor(QColor(100, 100, 100))
+    
+    def topological_sort_nodes(self, flowchart_nodes):
+        """Sort nodes in dependency order using topological sort
+        
+        Returns nodes in order where dependencies come before dependents.
+        For example, if Point B depends on Point A, A will come before B.
+        """
+        from collections import deque
+        
+        # Build dependency graph
+        # in_degree[node_id] = number of nodes this node depends on
+        # adjacency[node_id] = list of nodes that depend on this node
+        in_degree = {}
+        adjacency = {}
+        
+        # Initialize
+        for node_id, node in flowchart_nodes.items():
+            in_degree[node_id] = 0
+            adjacency[node_id] = []
+        
+        # Build graph based on node type dependencies
+        for node_id, node in flowchart_nodes.items():
+            if isinstance(node, PointNode):
+                # Point depends on its from_point
+                if node.from_point and node.from_point in flowchart_nodes:
+                    in_degree[node_id] += 1
+                    adjacency[node.from_point].append(node_id)
+                    
+            elif isinstance(node, LinkNode):
+                # Link depends on its start_point and end_point
+                if node.start_point and node.start_point in flowchart_nodes:
+                    in_degree[node_id] += 1
+                    adjacency[node.start_point].append(node_id)
+                if node.end_point and node.end_point in flowchart_nodes:
+                    in_degree[node_id] += 1
+                    adjacency[node.end_point].append(node_id)
+        
+        # Kahn's algorithm for topological sort
+        queue = deque()
+        
+        # Start with nodes that have no dependencies
+        for node_id in flowchart_nodes:
+            if in_degree[node_id] == 0:
+                queue.append(node_id)
+        
+        sorted_nodes = []
+        
+        while queue:
+            node_id = queue.popleft()
+            sorted_nodes.append(flowchart_nodes[node_id])
+            
+            # Reduce in-degree for dependent nodes
+            for dependent_id in adjacency[node_id]:
+                in_degree[dependent_id] -= 1
+                if in_degree[dependent_id] == 0:
+                    queue.append(dependent_id)
+        
+        # Check for cycles (if sorted_nodes doesn't contain all nodes)
+        if len(sorted_nodes) != len(flowchart_nodes):
+            # Cycle detected - return original order and log warning
+            print("Warning: Circular dependency detected in flowchart")
+            return list(flowchart_nodes.values())
+        
+        return sorted_nodes
         
     def update_preview(self, flowchart_nodes):
-        """Update preview based on flowchart - GENERIC VERSION
+        """Update preview based on flowchart - GENERIC VERSION with topological sorting
         
-        This method no longer needs to know about specific node types.
-        Each node creates its own preview items.
+        This method sorts nodes in dependency order before processing them.
         """
         # Clear existing geometry (keep grid and axes)
         for item in list(self.scene.items()):
@@ -205,10 +268,13 @@ class GeometryPreview(BaseGraphicsView):
         self.points.clear()
         self.links.clear()
         
-        # Process flowchart nodes - GENERIC APPROACH
+        # Process flowchart nodes in TOPOLOGICAL ORDER
         point_positions = {}
         
-        for node_id, node in flowchart_nodes.items():
+        # Sort nodes by dependencies
+        sorted_nodes = self.topological_sort_nodes(flowchart_nodes)
+        
+        for node in sorted_nodes:
             try:
                 # Ask node to create its own preview items
                 items = node.create_preview_items(

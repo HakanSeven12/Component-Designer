@@ -61,7 +61,6 @@ class FlowchartScene(QGraphicsScene):
         self.connections = []
         self.port_wires = []  # Store port-based connections
         self.selected_node = None
-        self.last_added_node = None
         
         # Connection state
         self.connection_in_progress = False
@@ -126,6 +125,34 @@ class FlowchartScene(QGraphicsScene):
         """Finish creating a connection"""
         if not self.connection_in_progress:
             return
+        
+        # Check if target port already has a connection - remove it if exists
+        existing_connections = []
+        for wire_data in self.port_wires:
+            if wire_data['to_item'] == node_item and wire_data['to_port'] == port_type:
+                existing_connections.append(wire_data)
+        
+        # Remove existing connections to this input port
+        for wire_data in existing_connections:
+            self.removeItem(wire_data['wire'])
+            self.port_wires.remove(wire_data)
+            
+            # Remove from connections list
+            for conn in list(self.connections):
+                if (conn['to'] == node_item.node.id and 
+                    conn['to_port'] == port_type):
+                    self.connections.remove(conn)
+                    break
+            
+            # Clear node references based on connection type
+            from models import PointNode, LinkNode
+            if isinstance(node_item.node, PointNode) and port_type == 'to':
+                node_item.node.from_point = None
+            elif isinstance(node_item.node, LinkNode):
+                if port_type == 'start':
+                    node_item.node.start_point = None
+                elif port_type == 'end':
+                    node_item.node.end_point = None
         
         # Create permanent wire
         start_pos = self.connection_start_item.get_port_scene_pos(self.connection_start_port)
@@ -203,58 +230,10 @@ class FlowchartScene(QGraphicsScene):
         node_item = FlowchartNodeItem(node, x, y)
         self.addItem(node_item)
         
-        # Auto-connect to previous node if it's a Point node
-        from models import StartNode, PointNode
-        if isinstance(node, PointNode) and self.last_added_node:
-            # Check if last node has output ports
-            if self.last_added_node.get_output_ports():
-                # Find node items
-                last_item = None
-                current_item = None
-                
-                for item in self.items():
-                    if isinstance(item, FlowchartNodeItem):
-                        if item.node == self.last_added_node:
-                            last_item = item
-                        elif item.node == node:
-                            current_item = item
-                
-                # Create auto connection from 'from' to 'to'
-                if (last_item and current_item and 
-                    'from' in last_item.ports and 'to' in current_item.ports):
-                    start_pos = last_item.get_port_scene_pos('from')
-                    end_pos = current_item.get_port_scene_pos('to')
-                    
-                    wire = ConnectionWire(start_pos, end_pos)
-                    wire.from_node = last_item.node
-                    wire.to_node = current_item.node
-                    wire.from_port = 'from'
-                    wire.to_port = 'to'
-                    self.addItem(wire)
-                    self.port_wires.append({
-                        'wire': wire,
-                        'from_item': last_item,
-                        'to_item': current_item,
-                        'from_port': 'from',
-                        'to_port': 'to'
-                    })
-                    
-                    # Update node's from_point reference
-                    node.from_point = self.last_added_node.id
-                    
-                    # Store connection data
-                    self.connections.append({
-                        'from': self.last_added_node.id,
-                        'to': node.id,
-                        'from_port': 'from',
-                        'to_port': 'to'
-                    })
-        
-        # Update last added node (don't update for START nodes)
-        if not isinstance(node, StartNode):
-            self.last_added_node = node
+        # No auto-connection - connections are purely based on explicit wires
         
         return node_item
+        
     def delete_selected_node(self):
         """Delete the currently selected node and its connections"""
         from models import StartNode
@@ -298,10 +277,6 @@ class FlowchartScene(QGraphicsScene):
         
         # Remove graphics item from scene
         self.removeItem(node_item)
-        
-        # Update last_added_node if this was it
-        if self.last_added_node == node:
-            self.last_added_node = None
         
         # Request preview update
         self.request_preview_update()

@@ -282,19 +282,78 @@ class PointNode(FlowchartNode):
         return properties
         
     def compute_position(self, from_point_pos=None):
-        """Compute point position based on geometry type"""
+        """Compute point position based on geometry type
+        
+        Args:
+            from_point_pos: Tuple (x, y) of the connected from_point position, or None
+            
+        Returns:
+            Tuple (x, y) computed position
+        """
         if self.geometry_type == PointGeometryType.OFFSET_ELEVATION:
+            # Absolute position
             self.computed_x = self.offset
             self.computed_y = self.elevation
+            
         elif self.geometry_type == PointGeometryType.DELTA_XY:
+            # Relative to from_point
             if from_point_pos:
                 self.computed_x = from_point_pos[0] + self.delta_x
                 self.computed_y = from_point_pos[1] + self.delta_y
+            else:
+                # No from_point connected - use delta as absolute
+                self.computed_x = self.delta_x
+                self.computed_y = self.delta_y
+                
         elif self.geometry_type == PointGeometryType.DELTA_X_SLOPE:
+            # Relative to from_point with slope
             if from_point_pos:
                 self.computed_x = from_point_pos[0] + self.delta_x
                 self.computed_y = from_point_pos[1] + (self.delta_x * self.slope)
+            else:
+                # No from_point connected - use delta_x as absolute x, slope determines y
+                self.computed_x = self.delta_x
+                self.computed_y = self.delta_x * self.slope
                 
+        elif self.geometry_type == PointGeometryType.DELTA_Y_SLOPE:
+            # Relative to from_point with slope
+            if from_point_pos:
+                if self.slope != 0:
+                    delta_x_calc = self.delta_y / self.slope
+                else:
+                    delta_x_calc = 0
+                self.computed_x = from_point_pos[0] + delta_x_calc
+                self.computed_y = from_point_pos[1] + self.delta_y
+            else:
+                # No from_point connected
+                if self.slope != 0:
+                    self.computed_x = self.delta_y / self.slope
+                else:
+                    self.computed_x = 0
+                self.computed_y = self.delta_y
+                
+        elif self.geometry_type == PointGeometryType.DELTA_X_SURFACE:
+            # On surface with delta_x offset
+            if from_point_pos:
+                self.computed_x = from_point_pos[0] + self.delta_x
+                # TODO: Get y from surface
+                self.computed_y = from_point_pos[1]
+            else:
+                self.computed_x = self.delta_x
+                self.computed_y = 0
+                
+        elif self.geometry_type == PointGeometryType.OFFSET_TARGET:
+            # Offset from target
+            # TODO: Get position from target parameter
+            self.computed_x = self.offset
+            self.computed_y = 0
+            
+        elif self.geometry_type == PointGeometryType.ELEVATION_TARGET:
+            # Elevation from target
+            # TODO: Get position from target parameter
+            self.computed_x = 0
+            self.computed_y = self.elevation
+        
         return (self.computed_x, self.computed_y)
     
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
@@ -309,11 +368,12 @@ class PointNode(FlowchartNode):
         
         items = []
         
-        # Compute position
+        # Get from_point position if connected
         from_pos = None
         if self.from_point and self.from_point in point_positions:
             from_pos = point_positions[self.from_point]
         
+        # Compute this point's position (may depend on from_pos)
         pos = self.compute_position(from_pos)
         point_positions[self.id] = pos
         
@@ -445,6 +505,7 @@ class LinkNode(FlowchartNode):
         
         items = []
         
+        # Check if both start and end points are connected and have positions
         if self.start_point and self.end_point:
             if self.start_point in point_positions and self.end_point in point_positions:
                 start_pos = point_positions[self.start_point]
