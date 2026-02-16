@@ -432,7 +432,18 @@ class ComponentDesigner(QMainWindow):
                         from_node = node_map[from_id]
                         to_node = node_map[to_id]
                         self.flowchart.scene.connect_nodes(from_node, to_node)
-            
+
+            # Load connections
+            if 'connections' in data:
+                for conn in data['connections']:
+                    from_id = conn['from']
+                    to_id = conn['to']
+                    
+                    if from_id in node_map and to_id in node_map:
+                        from_node = node_map[from_id]
+                        to_node = node_map[to_id]
+                        self.flowchart.scene.connect_nodes_with_wire(from_node, to_node)
+
             self.current_file = filename
             self.modified = False
             self.statusBar().showMessage(f"Loaded: {filename}")

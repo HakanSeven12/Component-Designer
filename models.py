@@ -54,6 +54,14 @@ class FlowchartNode(ABC):
         self.y = 0
         self.properties = {}
         self.next_nodes = []
+    
+    def get_port_types(self):
+        """Get list of port types this node has
+        
+        Returns:
+            list: List of port type strings ('from', 'to', 'start', 'end')
+        """
+        return []  # Default: no ports
         
     def to_dict(self):
         """Convert node to dictionary for serialization"""
@@ -65,6 +73,21 @@ class FlowchartNode(ABC):
             'y': self.y,
             'properties': self.properties
         }
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart
+        
+        Returns:
+            list: List of property definitions for inline editing
+        """
+        return [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            }
+        ]
     
     @abstractmethod
     def get_properties_widgets(self, parent_widget):
@@ -148,6 +171,119 @@ class PointNode(FlowchartNode):
         self.add_link_to_from = True
         self.computed_x = 0.0
         self.computed_y = 0.0
+    
+    def get_port_types(self):
+        """Point nodes have 'to' (input) and 'from' (output) ports"""
+        return ['to', 'from']
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'geometry_type',
+                'label': 'Type',
+                'type': 'combo',
+                'value': self.geometry_type,
+                'options': [{'label': gt.value, 'value': gt} for gt in PointGeometryType]
+            }
+        ]
+        
+        # Add relevant properties based on geometry type
+        if self.geometry_type == PointGeometryType.OFFSET_ELEVATION:
+            properties.extend([
+                {
+                    'name': 'offset',
+                    'label': 'Offset',
+                    'type': 'float',
+                    'value': self.offset
+                },
+                {
+                    'name': 'elevation',
+                    'label': 'Elevation',
+                    'type': 'float',
+                    'value': self.elevation
+                }
+            ])
+        elif self.geometry_type == PointGeometryType.DELTA_XY:
+            properties.extend([
+                {
+                    'name': 'delta_x',
+                    'label': 'Delta X',
+                    'type': 'float',
+                    'value': self.delta_x
+                },
+                {
+                    'name': 'delta_y',
+                    'label': 'Delta Y',
+                    'type': 'float',
+                    'value': self.delta_y
+                }
+            ])
+        elif self.geometry_type == PointGeometryType.DELTA_X_SLOPE:
+            properties.extend([
+                {
+                    'name': 'delta_x',
+                    'label': 'Delta X',
+                    'type': 'float',
+                    'value': self.delta_x
+                },
+                {
+                    'name': 'slope',
+                    'label': 'Slope',
+                    'type': 'float',
+                    'value': self.slope
+                }
+            ])
+        elif self.geometry_type == PointGeometryType.DELTA_Y_SLOPE:
+            properties.extend([
+                {
+                    'name': 'delta_y',
+                    'label': 'Delta Y',
+                    'type': 'float',
+                    'value': self.delta_y
+                },
+                {
+                    'name': 'slope',
+                    'label': 'Slope',
+                    'type': 'float',
+                    'value': self.slope
+                }
+            ])
+        elif self.geometry_type == PointGeometryType.DELTA_X_SURFACE:
+            properties.extend([
+                {
+                    'name': 'delta_x',
+                    'label': 'Delta X',
+                    'type': 'float',
+                    'value': self.delta_x
+                }
+            ])
+        elif self.geometry_type == PointGeometryType.OFFSET_TARGET:
+            properties.extend([
+                {
+                    'name': 'offset',
+                    'label': 'Offset',
+                    'type': 'float',
+                    'value': self.offset
+                }
+            ])
+        elif self.geometry_type == PointGeometryType.ELEVATION_TARGET:
+            properties.extend([
+                {
+                    'name': 'elevation',
+                    'label': 'Elevation',
+                    'type': 'float',
+                    'value': self.elevation
+                }
+            ])
+        
+        return properties
         
     def compute_position(self, from_point_pos=None):
         """Compute point position based on geometry type"""
@@ -382,6 +518,35 @@ class LinkNode(FlowchartNode):
         self.material = "Asphalt"
         self.thickness = 0.0
     
+    def get_port_types(self):
+        """Link nodes have 'start' and 'end' ports"""
+        return ['start', 'end']
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'link_type',
+                'label': 'Type',
+                'type': 'combo',
+                'value': self.link_type,
+                'options': [{'label': lt.value, 'value': lt} for lt in LinkType]
+            },
+            {
+                'name': 'thickness',
+                'label': 'Thickness',
+                'type': 'float',
+                'value': self.thickness
+            }
+        ]
+        return properties
+    
     def get_properties_widgets(self, parent_widget):
         """Return property widgets for Link node"""
         from PySide2.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit
@@ -553,6 +718,28 @@ class ShapeNode(FlowchartNode):
         self.links = []
         self.material = "Asphalt"
     
+    def get_port_types(self):
+        """Shape nodes have no ports"""
+        return []
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'material',
+                'label': 'Material',
+                'type': 'string',
+                'value': self.material
+            }
+        ]
+        return properties
+    
     def get_properties_widgets(self, parent_widget):
         """Return property widgets for Shape node"""
         from PySide2.QtWidgets import QLineEdit, QListWidget, QPushButton
@@ -633,6 +820,22 @@ class DecisionNode(FlowchartNode):
         self.true_branch = []
         self.false_branch = []
     
+    def get_port_types(self):
+        """Decision nodes have no ports for now"""
+        return []
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            }
+        ]
+        return properties
+    
     def get_properties_widgets(self, parent_widget):
         """Return property widgets for Decision node"""
         from PySide2.QtWidgets import QTextEdit
@@ -683,6 +886,14 @@ class StartNode(FlowchartNode):
     def __init__(self, node_id, name="START"):
         super().__init__(node_id, "Start", name)
     
+    def get_port_types(self):
+        """Start node has only 'from' (output) port"""
+        return ['from']
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        return []  # START node has no editable properties
+    
     def get_properties_widgets(self, parent_widget):
         """Start node has no editable properties"""
         return {}
@@ -721,6 +932,34 @@ class VariableNode(FlowchartNode):
         self.variable_name = ""
         self.expression = ""
     
+    def get_port_types(self):
+        """Variable nodes have no ports"""
+        return []
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'variable_name',
+                'label': 'Variable',
+                'type': 'string',
+                'value': self.variable_name
+            },
+            {
+                'name': 'expression',
+                'label': 'Expression',
+                'type': 'string',
+                'value': self.expression
+            }
+        ]
+        return properties
+    
     def get_properties_widgets(self, parent_widget):
         """Return property widgets for Variable node"""
         from PySide2.QtWidgets import QLineEdit
@@ -751,6 +990,23 @@ class VariableNode(FlowchartNode):
         """Get display color for variable"""
         from PySide2.QtGui import QColor
         return QColor(200, 200, 255)
+    
+    def to_dict(self):
+        """Convert to dictionary"""
+        data = super().to_dict()
+        data['variable_name'] = self.variable_name
+        data['expression'] = self.expression
+        return data
+    
+    @classmethod
+    def from_dict(cls, data):
+        """Create from dictionary"""
+        node = cls(data['id'], data['name'])
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
+        node.variable_name = data.get('variable_name', '')
+        node.expression = data.get('expression', '')
+        return node
 
 
 class GenericNode(FlowchartNode):
@@ -758,6 +1014,10 @@ class GenericNode(FlowchartNode):
     
     def __init__(self, node_id, node_type, name=""):
         super().__init__(node_id, node_type, name)
+    
+    def get_port_types(self):
+        """Generic nodes have no ports"""
+        return []
     
     def get_properties_widgets(self, parent_widget):
         """Generic node has no specific properties"""

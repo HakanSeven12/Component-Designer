@@ -1,180 +1,174 @@
 """
 Flowchart Module for Component Designer
-Contains flowchart scene, view, and draggable node items
+Contains flowchart scene, view, and connection items
 """
 
-from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsRectItem, 
-                               QGraphicsTextItem, QGraphicsItem, QGraphicsLineItem, 
-                               QGraphicsPolygonItem, QStyle)
-from PySide2.QtCore import Qt, Signal, QPointF, QLineF
-from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF, QMouseEvent
+from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
+from PySide2.QtCore import Qt, Signal, QPointF
+from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
 from models import PointNode, LinkNode, ShapeNode, DecisionNode, FlowchartNode
 from base_graphics_view import BaseGraphicsView
+from node import FlowchartNodeItem
 
 
-class ConnectionArrow(QGraphicsLineItem):
-    """Arrow connecting flowchart nodes"""
+class ConnectionWire(QGraphicsPathItem):
+    """Bezier curve connection between ports"""
     
-    def __init__(self, start_item, end_item, parent=None):
+    def __init__(self, start_pos, end_pos, parent=None):
         super().__init__(parent)
-        self.start_item = start_item
-        self.end_item = end_item
-        self.arrow_head = QGraphicsPolygonItem(self)
+        self.start_pos = start_pos
+        self.end_pos = end_pos
+        self.from_node = None
+        self.to_node = None
         
         # Style
-        self.setPen(QPen(QColor(100, 100, 100), 2))
-        self.arrow_head.setBrush(QBrush(QColor(100, 100, 100)))
-        self.arrow_head.setPen(QPen(QColor(100, 100, 100)))
+        pen = QPen(QColor(100, 100, 100), 3)
+        pen.setCapStyle(Qt.RoundCap)
+        self.setPen(pen)
         
-        self.update_position()
-        
-    def update_position(self):
-        """Update arrow position based on connected nodes"""
-        if not self.start_item or not self.end_item:
-            return
-            
-        # Get center points of both items
-        start_pos = self.start_item.sceneBoundingRect().center()
-        end_pos = self.end_item.sceneBoundingRect().center()
-        
-        # Set line
-        self.setLine(QLineF(start_pos, end_pos))
-        
-        # Calculate arrow head
-        line = self.line()
-        angle = line.angle()
-        
-        # Arrow head points
-        arrow_size = 10
-        p1 = line.p2()
-        
-        import math
-        angle_rad = math.radians(angle)
-        p2 = QPointF(
-            p1.x() - arrow_size * math.cos(angle_rad - math.pi / 6),
-            p1.y() + arrow_size * math.sin(angle_rad - math.pi / 6)
-        )
-        p3 = QPointF(
-            p1.x() - arrow_size * math.cos(angle_rad + math.pi / 6),
-            p1.y() + arrow_size * math.sin(angle_rad + math.pi / 6)
-        )
-        
-        arrow_head_polygon = QPolygonF([p1, p2, p3])
-        self.arrow_head.setPolygon(arrow_head_polygon)
-
-class FlowchartNodeItem(QGraphicsRectItem):
-    """Draggable flowchart node item"""
-
-    def __init__(self, node, x, y, parent=None):
-        super().__init__(0, 0, 120, 60, parent)
-        self.node = node
-        self.setPos(x, y)
-        self.setFlags(QGraphicsItem.ItemIsMovable | 
-                     QGraphicsItem.ItemIsSelectable |
-                     QGraphicsItem.ItemSendsGeometryChanges)
-        
-        # Set cache mode to avoid drawing artifacts
-        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
-        
-        # Visual styling
-        self.normal_pen = QPen(QColor(0, 0, 0), 2)
-        self.selected_pen = QPen(QColor(255, 120, 0), 3)
-        self.normal_brush = QBrush(QColor(200, 220, 255))
-        self.selected_brush = QBrush(QColor(255, 230, 180))
-
-        # Add text label - use relative positioning within the rectangle
-        self.text = QGraphicsTextItem(f"{node.type}\n{node.name}", self)
-        # Center the text within the rectangle
-        text_rect = self.text.boundingRect()
-        text_x = (120 - text_rect.width()) / 2
-        text_y = (60 - text_rect.height()) / 2
-        self.text.setPos(text_x, text_y)
-        
-        # Store node reference
-        self.setData(0, node)
-        
-    def itemChange(self, change, value):
-        """Handle item changes - update node position and arrows"""
-        if change == QGraphicsItem.ItemPositionChange:
-            # Update node position
-            new_pos = value
-            self.node.x = new_pos.x()
-            self.node.y = new_pos.y()
-            
-            # Update connected arrows
-            if self.scene():
-                self.scene().update_arrows()
-                # Trigger preview update
-                self.scene().request_preview_update()
-        
-        elif change == QGraphicsItem.ItemSelectedChange:
-            # Update visual style based on selection
-            if value:  # Being selected
-                self.setPen(self.selected_pen)
-                self.setBrush(self.selected_brush)
-            else:  # Being deselected
-                self.setPen(self.normal_pen)
-                self.setBrush(self.normal_brush)
-                
-        return super().itemChange(change, value)
+        self.update_path()
+        self.setZValue(-1)
     
-    def paint(self, painter, option, widget=None):
-        """Custom paint to show selection state"""
-        # Remove the selection rectangle that Qt draws by default
-        option.state &= ~QStyle.State_Selected
+    def update_path(self):
+        """Update bezier curve path"""
+        path = QPainterPath()
+        path.moveTo(self.start_pos)
         
-        # Enable antialiasing
-        painter.setRenderHint(QPainter.Antialiasing)
+        # Calculate control points for smooth curve
+        dx = self.end_pos.x() - self.start_pos.x()
         
-        # Draw the rectangle
-        if self.isSelected():
-            painter.setPen(self.selected_pen)
-            painter.setBrush(self.selected_brush)
-        else:
-            painter.setPen(self.normal_pen)
-            painter.setBrush(self.normal_brush)
+        ctrl1 = QPointF(self.start_pos.x() + abs(dx) * 0.5, self.start_pos.y())
+        ctrl2 = QPointF(self.end_pos.x() - abs(dx) * 0.5, self.end_pos.y())
         
-        painter.drawRect(self.rect())
-        
-        # Draw selection highlight if selected
-        if self.isSelected():
-            # Draw a glow effect
-            glow_pen = QPen(QColor(255, 120, 0, 100), 6)
-            painter.setPen(glow_pen)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(self.rect().adjusted(-3, -3, 3, 3))
-
-    def mousePressEvent(self, event):
-        """Handle mouse press - select node"""
-        super().mousePressEvent(event)
-        if self.scene():
-            self.scene().node_selected.emit(self.node)
-            
-    def mouseDoubleClickEvent(self, event):
-        """Handle double click - edit node"""
-        super().mouseDoubleClickEvent(event)
-        if self.scene():
-            self.scene().node_selected.emit(self.node)
+        path.cubicTo(ctrl1, ctrl2, self.end_pos)
+        self.setPath(path)
+    
+    def set_end_pos(self, pos):
+        """Update end position (for dragging)"""
+        self.end_pos = pos
+        self.update_path()
 
 
 class FlowchartScene(QGraphicsScene):
     """Custom scene for flowchart editing"""
     
     node_selected = Signal(object)
-    preview_update_requested = Signal()  # Add new signal
+    preview_update_requested = Signal()
     
     def __init__(self):
         super().__init__()
         self.nodes = {}
         self.connections = []
-        self.arrows = []
+        self.port_wires = []  # Store port-based connections
         self.selected_node = None
         self.last_added_node = None
         
-    def request_preview_update(self):
-        """Request preview update"""
-        self.preview_update_requested.emit()
+        # Connection state
+        self.connection_in_progress = False
+        self.connection_start_item = None
+        self.connection_start_port = None
+        self.temp_wire = None
+    
+    def can_connect_ports(self, from_port_type, to_port_type):
+        """Check if two port types can be connected
         
+        Valid connections:
+        - from -> to (Point to Point)
+        - from -> start (Point to Link)
+        - end -> to (Link to Point)
+        """
+        valid_connections = [
+            ('from', 'to'),      # Point to Point
+            ('from', 'start'),   # Point to Link
+            ('end', 'to'),       # Link to Point
+        ]
+        return (from_port_type, to_port_type) in valid_connections
+        
+    def handle_port_click(self, node_item, port_type):
+        """Handle port click for connection"""
+        if not self.connection_in_progress:
+            # Start connection from output ports (from, end)
+            if port_type in ['from', 'end']:
+                self.start_connection(node_item, port_type)
+        else:
+            # Finish connection at input ports (to, start)
+            if port_type in ['to', 'start'] and node_item != self.connection_start_item:
+                # Check if connection is valid
+                if self.can_connect_ports(self.connection_start_port, port_type):
+                    self.finish_connection(node_item, port_type)
+                else:
+                    # Invalid connection
+                    self.cancel_connection()
+            else:
+                # Cancel connection
+                self.cancel_connection()
+    
+    def start_connection(self, node_item, port_type):
+        """Start creating a connection"""
+        self.connection_in_progress = True
+        self.connection_start_item = node_item
+        self.connection_start_port = port_type
+        
+        # Create temporary wire
+        start_pos = node_item.get_port_scene_pos(port_type)
+        self.temp_wire = ConnectionWire(start_pos, start_pos)
+        self.addItem(self.temp_wire)
+    
+    def finish_connection(self, node_item, port_type):
+        """Finish creating a connection"""
+        if not self.connection_in_progress:
+            return
+        
+        # Create permanent wire
+        start_pos = self.connection_start_item.get_port_scene_pos(self.connection_start_port)
+        end_pos = node_item.get_port_scene_pos(port_type)
+        
+        wire = ConnectionWire(start_pos, end_pos)
+        wire.from_node = self.connection_start_item.node
+        wire.to_node = node_item.node
+        wire.from_port = self.connection_start_port
+        wire.to_port = port_type
+        self.addItem(wire)
+        self.port_wires.append({
+            'wire': wire,
+            'from_item': self.connection_start_item,
+            'to_item': node_item,
+            'from_port': self.connection_start_port,
+            'to_port': port_type
+        })
+        
+        # Update node references based on connection type
+        from models import PointNode, LinkNode
+        if isinstance(node_item.node, PointNode) and port_type == 'to':
+            # Point receiving connection
+            node_item.node.from_point = self.connection_start_item.node.id
+        elif isinstance(node_item.node, LinkNode):
+            # Link receiving connection
+            if port_type == 'start':
+                node_item.node.start_point = self.connection_start_item.node.id
+            elif port_type == 'end':
+                node_item.node.end_point = self.connection_start_item.node.id
+        
+        # Store connection data
+        self.connections.append({
+            'from': self.connection_start_item.node.id,
+            'to': node_item.node.id,
+            'from_port': self.connection_start_port,
+            'to_port': port_type
+        })
+        
+        # Clean up
+        if self.temp_wire:
+            self.removeItem(self.temp_wire)
+            self.temp_wire = None
+        
+        self.connection_in_progress = False
+        self.connection_start_item = None
+        self.connection_start_port = None
+        
+        # Update preview
+        self.request_preview_update()
+    
     def add_flowchart_node(self, node, x, y):
         """Add a node to the flowchart"""
         self.nodes[node.id] = node
@@ -185,19 +179,60 @@ class FlowchartScene(QGraphicsScene):
         node_item = FlowchartNodeItem(node, x, y)
         self.addItem(node_item)
         
-        # Connect to previous node if exists and not a START node
-        from models import StartNode
-        if self.last_added_node and self.last_added_node != node and not isinstance(node, StartNode):
-            self.connect_nodes(self.last_added_node, node)
+        # Auto-connect to previous node if it's a Point node
+        from models import StartNode, PointNode
+        if isinstance(node, PointNode) and self.last_added_node:
+            # Find the last node with 'from' port
+            if 'from' in self.last_added_node.get_port_types():
+                # Find node items
+                last_item = None
+                current_item = None
+                
+                for item in self.items():
+                    if isinstance(item, FlowchartNodeItem):
+                        if item.node == self.last_added_node:
+                            last_item = item
+                        elif item.node == node:
+                            current_item = item
+                
+                # Create auto connection
+                if last_item and current_item and 'from' in last_item.ports and 'to' in current_item.ports:
+                    start_pos = last_item.get_port_scene_pos('from')
+                    end_pos = current_item.get_port_scene_pos('to')
+                    
+                    wire = ConnectionWire(start_pos, end_pos)
+                    wire.from_node = last_item.node
+                    wire.to_node = current_item.node
+                    wire.from_port = 'from'
+                    wire.to_port = 'to'
+                    self.addItem(wire)
+                    self.port_wires.append({
+                        'wire': wire,
+                        'from_item': last_item,
+                        'to_item': current_item,
+                        'from_port': 'from',
+                        'to_port': 'to'
+                    })
+                    
+                    # Update node's from_point reference
+                    node.from_point = self.last_added_node.id
+                    
+                    # Store connection data
+                    self.connections.append({
+                        'from': self.last_added_node.id,
+                        'to': node.id,
+                        'from_port': 'from',
+                        'to_port': 'to'
+                    })
         
         # Update last added node (don't update for START nodes)
         if not isinstance(node, StartNode):
             self.last_added_node = node
         
         return node_item
-        
-    def connect_nodes(self, from_node, to_node):
-        """Create arrow connection between two nodes"""
+    
+    def connect_nodes_with_wire(self, from_node, to_node, from_port='from', to_port='to'):
+        """Create wire connection between two nodes (used when loading from file)"""
         # Find the graphics items for these nodes
         from_item = None
         to_item = None
@@ -208,26 +243,40 @@ class FlowchartScene(QGraphicsScene):
                     from_item = item
                 elif item.node == to_node:
                     to_item = item
-                    
-        if from_item and to_item:
-            arrow = ConnectionArrow(from_item, to_item)
-            self.addItem(arrow)
-            self.arrows.append(arrow)
-            arrow.setZValue(-1)  # Put arrows behind nodes
+        
+        # Create wire if both items have the required ports
+        if (from_item and to_item and 
+            from_port in from_item.ports and to_port in to_item.ports):
             
-            # Store connection data
-            self.connections.append({
-                'from': from_node.id,
-                'to': to_node.id
+            start_pos = from_item.get_port_scene_pos(from_port)
+            end_pos = to_item.get_port_scene_pos(to_port)
+            
+            wire = ConnectionWire(start_pos, end_pos)
+            wire.from_node = from_node
+            wire.to_node = to_node
+            wire.from_port = from_port
+            wire.to_port = to_port
+            self.addItem(wire)
+            self.port_wires.append({
+                'wire': wire,
+                'from_item': from_item,
+                'to_item': to_item,
+                'from_port': from_port,
+                'to_port': to_port
             })
             
-    def update_arrows(self):
-        """Update all arrow positions"""
-        for arrow in self.arrows:
-            arrow.update_position()
+            # Update node references
+            from models import PointNode, LinkNode
+            if isinstance(to_node, PointNode) and to_port == 'to':
+                to_node.from_point = from_node.id
+            elif isinstance(to_node, LinkNode):
+                if to_port == 'start':
+                    to_node.start_point = from_node.id
+                elif to_port == 'end':
+                    to_node.end_point = from_node.id
 
 
-class FlowchartView(BaseGraphicsView):  # Changed from QGraphicsView
+class FlowchartView(BaseGraphicsView):
     """Flowchart editor view"""
     
     def __init__(self):
@@ -243,9 +292,6 @@ class FlowchartView(BaseGraphicsView):  # Changed from QGraphicsView
         self.setAcceptDrops(True)
         
         self.node_counter = 0
-        self.temp_line = None
-        self.connecting_mode = False
-        self.connection_start = None
         
         # Connect scene signals
         self.scene.node_selected.connect(self.on_node_selected)
