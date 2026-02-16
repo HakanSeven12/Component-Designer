@@ -10,7 +10,7 @@ from PySide2.QtCore import Qt
 
 from flowchart import FlowchartView
 from preview import GeometryPreview
-from panels import ParametersPanel, ToolboxPanel
+from panels import ToolboxPanel
 from models import PointNode, LinkNode, ShapeNode, DecisionNode
 from flowchart import FlowchartNodeItem
 from models import create_node_from_dict
@@ -95,28 +95,11 @@ class ComponentDesigner(QMainWindow):
         center_splitter.addWidget(preview_container)
         center_splitter.setSizes([400, 400])
         
-        # Right side: Only Parameters (removed Properties)
-        right_splitter = QSplitter(Qt.Vertical)
-        
-        parameters_container = QWidget()
-        parameters_layout = QVBoxLayout()
-        parameters_label = QLabel("Settings and Parameters")
-        parameters_label.setStyleSheet("font-weight: bold; background: #e0e0e0; padding: 5px;")
-        self.parameters = ParametersPanel()
-        parameters_layout.addWidget(parameters_label)
-        parameters_layout.addWidget(self.parameters)
-        parameters_layout.setContentsMargins(0, 0, 0, 0)
-        parameters_container.setLayout(parameters_layout)
-        
-        right_splitter.addWidget(parameters_container)
-        right_splitter.setSizes([700])  # Single panel, give it full height
-        
-        # Main horizontal splitter
+        # Main horizontal splitter - only left and center now
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.addWidget(left_splitter)
         main_splitter.addWidget(center_splitter)
-        main_splitter.addWidget(right_splitter)
-        main_splitter.setSizes([250, 800, 400])
+        main_splitter.setSizes([250, 800])
         
         main_layout.addWidget(main_splitter)
         central.setLayout(main_layout)
@@ -297,10 +280,6 @@ class ComponentDesigner(QMainWindow):
     def save_to_file(self, filename):
         """Save component to file"""
         data = {
-            'component_settings': {
-                'name': self.parameters.component_name.text(),
-                'description': self.parameters.component_desc.toPlainText()
-            },
             'nodes': [],
             'connections': []
         }
@@ -359,12 +338,7 @@ class ComponentDesigner(QMainWindow):
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                
-            # Load component settings
-            if 'component_settings' in data:
-                self.parameters.component_name.setText(data['component_settings'].get('name', ''))
-                self.parameters.component_desc.setPlainText(data['component_settings'].get('description', ''))
-                
+            
             # Clear existing flowchart
             self.flowchart.scene.clear()
             self.flowchart.scene.nodes.clear()

@@ -782,7 +782,233 @@ class GenericNode(FlowchartNode):
         """Get display color for generic node"""
         from PySide2.QtGui import QColor
         return QColor(150, 150, 150)
+    
+class InputParameterNode(FlowchartNode):
+    """Input parameter node"""
+    
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Input Parameter", name)
+        self.parameter_type = ParameterType.DISTANCE
+        self.default_value = 0.0
+        self.display_name = name
+        self.description = ""
+    
+    def get_input_ports(self):
+        """Input parameter nodes have no input ports"""
+        return []
+    
+    def get_output_ports(self):
+        """Input parameter nodes have 'value' as output port"""
+        return ['value']
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'parameter_type',
+                'label': 'Type',
+                'type': 'combo',
+                'value': self.parameter_type,
+                'options': [{'label': pt.value, 'value': pt} for pt in ParameterType]
+            },
+            {
+                'name': 'default_value',
+                'label': 'Default',
+                'type': 'float',
+                'value': self.default_value
+            }
+        ]
+        return properties
+    
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        """Input parameter nodes don't appear in preview"""
+        return []
+    
+    def get_preview_display_color(self):
+        """Get display color for input parameter"""
+        from PySide2.QtGui import QColor
+        return QColor(100, 150, 255)
+    
+    def to_dict(self):
+        """Convert to dictionary"""
+        data = super().to_dict()
+        data['parameter_type'] = self.parameter_type.value
+        data['default_value'] = self.default_value
+        data['display_name'] = self.display_name
+        data['description'] = self.description
+        return data
+    
+    @classmethod
+    def from_dict(cls, data):
+        """Create from dictionary"""
+        node = cls(data['id'], data['name'])
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
+        
+        # Load parameter type
+        param_type_str = data.get('parameter_type', 'Distance')
+        for pt in ParameterType:
+            if pt.value == param_type_str:
+                node.parameter_type = pt
+                break
+        
+        node.default_value = data.get('default_value', 0.0)
+        node.display_name = data.get('display_name', node.name)
+        node.description = data.get('description', '')
+        return node
 
+
+class OutputParameterNode(FlowchartNode):
+    """Output parameter node"""
+    
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Output Parameter", name)
+        self.parameter_type = ParameterType.DISTANCE
+        self.display_name = name
+        self.description = ""
+    
+    def get_input_ports(self):
+        """Output parameter nodes have 'value' as input port"""
+        return ['value']
+    
+    def get_output_ports(self):
+        """Output parameter nodes have no output ports"""
+        return []
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'parameter_type',
+                'label': 'Type',
+                'type': 'combo',
+                'value': self.parameter_type,
+                'options': [{'label': pt.value, 'value': pt} for pt in ParameterType]
+            }
+        ]
+        return properties
+    
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        """Output parameter nodes don't appear in preview"""
+        return []
+    
+    def get_preview_display_color(self):
+        """Get display color for output parameter"""
+        from PySide2.QtGui import QColor
+        return QColor(255, 150, 100)
+    
+    def to_dict(self):
+        """Convert to dictionary"""
+        data = super().to_dict()
+        data['parameter_type'] = self.parameter_type.value
+        data['display_name'] = self.display_name
+        data['description'] = self.description
+        return data
+    
+    @classmethod
+    def from_dict(cls, data):
+        """Create from dictionary"""
+        node = cls(data['id'], data['name'])
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
+        
+        # Load parameter type
+        param_type_str = data.get('parameter_type', 'Distance')
+        for pt in ParameterType:
+            if pt.value == param_type_str:
+                node.parameter_type = pt
+                break
+        
+        node.display_name = data.get('display_name', node.name)
+        node.description = data.get('description', '')
+        return node
+
+
+class TargetParameterNode(FlowchartNode):
+    """Target parameter node"""
+    
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Target Parameter", name)
+        self.target_type = TargetType.SURFACE
+        self.preview_value = -1.0
+    
+    def get_input_ports(self):
+        """Target parameter nodes have no input ports"""
+        return []
+    
+    def get_output_ports(self):
+        """Target parameter nodes have 'target' as output port"""
+        return ['target']
+    
+    def get_inline_properties(self):
+        """Get properties for inline editing in flowchart"""
+        properties = [
+            {
+                'name': 'name',
+                'label': 'Name',
+                'type': 'string',
+                'value': self.name
+            },
+            {
+                'name': 'target_type',
+                'label': 'Type',
+                'type': 'combo',
+                'value': self.target_type,
+                'options': [{'label': tt.value, 'value': tt} for tt in TargetType]
+            },
+            {
+                'name': 'preview_value',
+                'label': 'Preview Value',
+                'type': 'float',
+                'value': self.preview_value
+            }
+        ]
+        return properties
+    
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        """Target parameter nodes don't appear in preview"""
+        return []
+    
+    def get_preview_display_color(self):
+        """Get display color for target parameter"""
+        from PySide2.QtGui import QColor
+        return QColor(150, 255, 150)
+    
+    def to_dict(self):
+        """Convert to dictionary"""
+        data = super().to_dict()
+        data['target_type'] = self.target_type.value
+        data['preview_value'] = self.preview_value
+        return data
+    
+    @classmethod
+    def from_dict(cls, data):
+        """Create from dictionary"""
+        node = cls(data['id'], data['name'])
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
+        
+        # Load target type
+        target_type_str = data.get('target_type', 'Surface')
+        for tt in TargetType:
+            if tt.value == target_type_str:
+                node.target_type = tt
+                break
+        
+        node.preview_value = data.get('preview_value', -1.0)
+        return node
 
 # Node registry for factory pattern
 NODE_REGISTRY = {
@@ -792,6 +1018,9 @@ NODE_REGISTRY = {
     'Decision': DecisionNode,
     'Variable': VariableNode,
     'Start': StartNode,
+    'Input Parameter': InputParameterNode,
+    'Output Parameter': OutputParameterNode,
+    'Target Parameter': TargetParameterNode,
 }
 
 

@@ -456,14 +456,14 @@ class FlowchartView(BaseGraphicsView):
                 node = self.create_shape_node_at(pos.x(), pos.y())
             elif element_type == "Decision":
                 node = self.create_decision_node_at(pos.x(), pos.y())
-            elif element_type == "Arc Point":
-                node = self.create_point_node_at(pos.x(), pos.y())
-                node.name = f"AP{self.node_counter}"
-            elif element_type == "Parabola Point":
-                node = self.create_point_node_at(pos.x(), pos.y())
-                node.name = f"PP{self.node_counter}"
+            elif element_type == "Input Parameter":
+                node = self.create_input_parameter_node_at(pos.x(), pos.y())
+            elif element_type == "Output Parameter":
+                node = self.create_output_parameter_node_at(pos.x(), pos.y())
+            elif element_type == "Target Parameter":
+                node = self.create_target_parameter_node_at(pos.x(), pos.y())
             elif element_type in ["Variable", "Switch", "Auxiliary Point", 
-                                 "Auxiliary Line", "Auxiliary Curve", "Mark Point", "Comment"]:
+                                "Auxiliary Line", "Auxiliary Curve", "Mark Point", "Comment"]:
                 # Create generic nodes for these types
                 node = self.create_generic_node_at(element_type, pos.x(), pos.y())
             
@@ -508,7 +508,31 @@ class FlowchartView(BaseGraphicsView):
         decision = DecisionNode(node_id, f"D{self.node_counter}")
         self.scene.add_flowchart_node(decision, x, y)
         return decision
-        
+    
+    def create_input_parameter_node_at(self, x, y):
+        """Create input parameter node at specific position"""
+        from models import InputParameterNode
+        node_id = self.get_next_node_id()
+        node = InputParameterNode(node_id, f"IP{self.node_counter}")
+        self.scene.add_flowchart_node(node, x, y)
+        return node
+
+    def create_output_parameter_node_at(self, x, y):
+        """Create output parameter node at specific position"""
+        from models import OutputParameterNode
+        node_id = self.get_next_node_id()
+        node = OutputParameterNode(node_id, f"OP{self.node_counter}")
+        self.scene.add_flowchart_node(node, x, y)
+        return node
+
+    def create_target_parameter_node_at(self, x, y):
+        """Create target parameter node at specific position"""
+        from models import TargetParameterNode
+        node_id = self.get_next_node_id()
+        node = TargetParameterNode(node_id, f"TP{self.node_counter}")
+        self.scene.add_flowchart_node(node, x, y)
+        return node
+    
     def create_generic_node_at(self, node_type, x, y):
         """Create generic node at specific position"""
         node_id = self.get_next_node_id()
