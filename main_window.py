@@ -286,42 +286,7 @@ class ComponentDesigner(QMainWindow):
         
         # Save nodes in order
         for node_id, node in self.flowchart.scene.nodes.items():
-            node_data = {
-                'id': node.id,
-                'type': node.type,
-                'name': node.name,
-                'x': node.x,
-                'y': node.y
-            }
-            
-            # Add type-specific properties
-            if isinstance(node, PointNode):
-                node_data['geometry_type'] = node.geometry_type.value
-                node_data['offset'] = node.offset
-                node_data['elevation'] = node.elevation
-                node_data['delta_x'] = node.delta_x
-                node_data['delta_y'] = node.delta_y
-                node_data['slope'] = node.slope
-                node_data['from_point'] = node.from_point
-                node_data['point_codes'] = node.point_codes
-                node_data['add_link_to_from'] = node.add_link_to_from
-                
-            elif isinstance(node, LinkNode):
-                node_data['link_type'] = node.link_type.value
-                node_data['start_point'] = node.start_point
-                node_data['end_point'] = node.end_point
-                node_data['link_codes'] = node.link_codes
-                node_data['material'] = node.material
-                node_data['thickness'] = node.thickness
-                
-            elif isinstance(node, ShapeNode):
-                node_data['shape_codes'] = node.shape_codes
-                node_data['links'] = node.links
-                node_data['material'] = node.material
-                
-            elif isinstance(node, DecisionNode):
-                node_data['condition'] = node.condition
-                
+            node_data = node.to_dict()
             data['nodes'].append(node_data)
         
         # Save connections

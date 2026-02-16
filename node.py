@@ -507,6 +507,11 @@ class FlowchartNodeItem(QGraphicsRectItem):
                 # Trigger preview update
                 self.scene().request_preview_update()
         
+        elif change == QGraphicsRectItem.ItemPositionHasChanged:
+            # Force scene update to clear artifacts
+            if self.scene():
+                self.scene().update()
+                
         elif change == QGraphicsRectItem.ItemSelectedChange:
             # Update visual style based on selection
             self.update()
