@@ -16,23 +16,16 @@ class PortWidget(QWidget):
     port_clicked = Signal(object, str)  # (node, port_type)
     
     PORT_COLORS = {
-        'from': QColor(100, 200, 100),    # Green for output
-        'to': QColor(255, 150, 50),       # Orange for input
-        'start': QColor(255, 150, 50),    # Orange for input (link start)
-        'end': QColor(255, 150, 50),      # Orange for input (link end)
+        'input': QColor(255, 150, 50),    # Orange for input
+        'output': QColor(100, 200, 100),  # Green for output
     }
     
-    PORT_LABELS = {
-        'from': 'OUT',
-        'to': 'IN',
-        'start': 'START',
-        'end': 'END'
-    }
     
-    def __init__(self, node, port_type, parent=None):
+    def __init__(self, node, port_name, port_type, parent=None):
         super().__init__(parent)
         self.node = node
-        self.port_type = port_type  # 'from', 'to', 'start', 'end'
+        self.port_name = port_name
+        self.port_type = port_type
         self.is_hovered = False
         self.setFixedHeight(24)
         self.setMinimumWidth(50)
@@ -62,7 +55,7 @@ class PortWidget(QWidget):
         font.setPointSize(7)
         painter.setFont(font)
         
-        label = self.PORT_LABELS.get(self.port_type, self.port_type.upper())
+        label = self.port_name.upper()
         painter.drawText(self.rect(), Qt.AlignCenter, label)
     
     def enterEvent(self, event):
@@ -235,28 +228,30 @@ class FlowchartNodeItem(QGraphicsRectItem):
         ports_layout = QHBoxLayout()
         ports_layout.setContentsMargins(10, 8, 10, 8)
         ports_layout.setSpacing(8)
+
+        input_ports_layout = QVBoxLayout()
+        output_ports_layout = QVBoxLayout()
+        ports_layout.addChildLayout(input_ports_layout)
+        ports_layout.addStretch()
+        ports_layout.addChildLayout(output_ports_layout)
         
         # Get input and output ports separately
         input_ports = self.node.get_input_ports()
         output_ports = self.node.get_output_ports()
         
         # Add input ports on the left
-        for port_type in input_ports:
-            port = PortWidget(self.node, port_type)
+        for port_name in input_ports:
+            port = PortWidget(self.node, port_name, 'input')
             port.port_clicked.connect(self.on_port_clicked)
-            self.ports[port_type] = port
-            ports_layout.addWidget(port)
-        
-        # Add spacer between input and output ports
-        if input_ports and output_ports:
-            ports_layout.addStretch()
+            self.ports[port_name] = port
+            input_ports_layout.addWidget(port)
         
         # Add output ports on the right
-        for port_type in output_ports:
-            port = PortWidget(self.node, port_type)
+        for port_name in output_ports:
+            port = PortWidget(self.node, port_name, 'output')
             port.port_clicked.connect(self.on_port_clicked)
-            self.ports[port_type] = port
-            ports_layout.addWidget(port)
+            self.ports[port_name] = port
+            output_ports_layout.addWidget(port)
         
         ports_widget.setLayout(ports_layout)
         body_layout.addWidget(ports_widget)
