@@ -18,15 +18,15 @@ class PortWidget(QWidget):
     PORT_COLORS = {
         'from': QColor(100, 200, 100),    # Green for output
         'to': QColor(255, 150, 50),       # Orange for input
-        'start': QColor(100, 150, 255),   # Blue for link start (input)
-        'end': QColor(200, 100, 255),     # Purple for link end (output)
+        'start': QColor(255, 150, 50),    # Orange for input (link start)
+        'end': QColor(255, 150, 50),      # Orange for input (link end)
     }
     
     PORT_LABELS = {
         'from': 'OUT',
         'to': 'IN',
-        'start': 'IN',
-        'end': 'OUT'
+        'start': 'START',
+        'end': 'END'
     }
     
     def __init__(self, node, port_type, parent=None):
@@ -205,10 +205,12 @@ class FlowchartNodeItem(QGraphicsRectItem):
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
         
-        # Add ports dynamically based on node type
-        port_types = self.node.get_port_types()
-        if port_types:
-            self.create_ports(body_layout, port_types)
+        # Add ports if node has any
+        input_ports = self.node.get_input_ports()
+        output_ports = self.node.get_output_ports()
+        
+        if input_ports or output_ports:
+            self.create_ports(body_layout)
         
         # Form layout for properties
         self.form_layout = QFormLayout()
@@ -227,22 +229,16 @@ class FlowchartNodeItem(QGraphicsRectItem):
         self.body_widget.setLayout(body_layout)
         main_layout.addWidget(self.body_widget)
     
-    def create_ports(self, body_layout, port_types):
-        """Create port widgets based on node's port types"""
+    def create_ports(self, body_layout):
+        """Create port widgets based on node's input and output ports"""
         ports_widget = QWidget()
         ports_layout = QHBoxLayout()
         ports_layout.setContentsMargins(10, 8, 10, 8)
         ports_layout.setSpacing(8)
         
-        # Separate input and output ports
-        input_ports = []
-        output_ports = []
-        
-        for port_type in port_types:
-            if port_type in ['to', 'start']:
-                input_ports.append(port_type)
-            elif port_type in ['from', 'end']:
-                output_ports.append(port_type)
+        # Get input and output ports separately
+        input_ports = self.node.get_input_ports()
+        output_ports = self.node.get_output_ports()
         
         # Add input ports on the left
         for port_type in input_ports:
@@ -251,7 +247,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.ports[port_type] = port
             ports_layout.addWidget(port)
         
-        # Add spacer
+        # Add spacer between input and output ports
         if input_ports and output_ports:
             ports_layout.addStretch()
         

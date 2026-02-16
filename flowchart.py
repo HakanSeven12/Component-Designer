@@ -72,27 +72,31 @@ class FlowchartScene(QGraphicsScene):
     def can_connect_ports(self, from_port_type, to_port_type):
         """Check if two port types can be connected
         
-        Valid connections:
-        - from -> to (Point to Point)
-        - from -> start (Point to Link)
-        - end -> to (Link to Point)
+        Valid connections - from output ports to input ports:
+        - 'from' -> 'to' (Point OUT to Point IN)
+        - 'from' -> 'start' (Point OUT to Link START IN)
+        - 'from' -> 'end' (Point OUT to Link END IN)
         """
         valid_connections = [
-            ('from', 'to'),      # Point to Point
-            ('from', 'start'),   # Point to Link
-            ('end', 'to'),       # Link to Point
+            ('from', 'to'),      # Point OUT to Point IN
+            ('from', 'start'),   # Point OUT to Link START IN
+            ('from', 'end'),     # Point OUT to Link END IN
         ]
         return (from_port_type, to_port_type) in valid_connections
         
     def handle_port_click(self, node_item, port_type):
         """Handle port click for connection"""
+        # Check if this is an input or output port
+        is_output = port_type in node_item.node.get_output_ports()
+        is_input = port_type in node_item.node.get_input_ports()
+        
         if not self.connection_in_progress:
-            # Start connection from output ports (from, end)
-            if port_type in ['from', 'end']:
+            # Start connection only from output ports
+            if is_output:
                 self.start_connection(node_item, port_type)
         else:
-            # Finish connection at input ports (to, start)
-            if port_type in ['to', 'start'] and node_item != self.connection_start_item:
+            # Finish connection at input ports
+            if is_input and node_item != self.connection_start_item:
                 # Check if connection is valid
                 if self.can_connect_ports(self.connection_start_port, port_type):
                     self.finish_connection(node_item, port_type)
@@ -104,7 +108,11 @@ class FlowchartScene(QGraphicsScene):
                 self.cancel_connection()
     
     def start_connection(self, node_item, port_type):
-        """Start creating a connection"""
+        """Start creating a connection - only from output ports"""
+        # Only allow starting connections from output ports
+        if port_type not in node_item.node.get_output_ports():
+            return
+            
         self.connection_in_progress = True
         self.connection_start_item = node_item
         self.connection_start_port = port_type
@@ -169,6 +177,22 @@ class FlowchartScene(QGraphicsScene):
         # Update preview
         self.request_preview_update()
     
+    def cancel_connection(self):
+        """Cancel connection in progress"""
+        if self.temp_wire:
+            self.removeItem(self.temp_wire)
+            self.temp_wire = None
+        
+        self.connection_in_progress = False
+        self.connection_start_item = None
+        self.connection_start_port = None
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for connection preview"""
+        if self.connection_in_progress and self.temp_wire:
+            self.temp_wire.set_end_pos(event.scenePos())
+        super().mouseMoveEvent(event)
+    
     def add_flowchart_node(self, node, x, y):
         """Add a node to the flowchart"""
         self.nodes[node.id] = node
@@ -182,8 +206,8 @@ class FlowchartScene(QGraphicsScene):
         # Auto-connect to previous node if it's a Point node
         from models import StartNode, PointNode
         if isinstance(node, PointNode) and self.last_added_node:
-            # Find the last node with 'from' port
-            if 'from' in self.last_added_node.get_port_types():
+            # Check if last node has output ports
+            if self.last_added_node.get_output_ports():
                 # Find node items
                 last_item = None
                 current_item = None
@@ -195,8 +219,9 @@ class FlowchartScene(QGraphicsScene):
                         elif item.node == node:
                             current_item = item
                 
-                # Create auto connection
-                if last_item and current_item and 'from' in last_item.ports and 'to' in current_item.ports:
+                # Create auto connection from 'from' to 'to'
+                if (last_item and current_item and 
+                    'from' in last_item.ports and 'to' in current_item.ports):
                     start_pos = last_item.get_port_scene_pos('from')
                     end_pos = current_item.get_port_scene_pos('to')
                     
@@ -230,6 +255,25 @@ class FlowchartScene(QGraphicsScene):
             self.last_added_node = node
         
         return node_item
+    
+    def update_port_wires(self, moved_node_item):
+        """Update wire positions when a node is moved"""
+        for wire_data in self.port_wires:
+            if wire_data['from_item'] == moved_node_item:
+                # Update start position
+                new_start_pos = moved_node_item.get_port_scene_pos(wire_data['from_port'])
+                wire_data['wire'].start_pos = new_start_pos
+                wire_data['wire'].update_path()
+            
+            if wire_data['to_item'] == moved_node_item:
+                # Update end position
+                new_end_pos = moved_node_item.get_port_scene_pos(wire_data['to_port'])
+                wire_data['wire'].end_pos = new_end_pos
+                wire_data['wire'].update_path()
+    
+    def request_preview_update(self):
+        """Request preview update"""
+        self.preview_update_requested.emit()
     
     def connect_nodes_with_wire(self, from_node, to_node, from_port='from', to_port='to'):
         """Create wire connection between two nodes (used when loading from file)"""
@@ -275,40 +319,6 @@ class FlowchartScene(QGraphicsScene):
                 elif to_port == 'end':
                     to_node.end_point = from_node.id
 
-    def update_port_wires(self, moved_node_item):
-        """Update wire positions when a node is moved"""
-        for wire_data in self.port_wires:
-            if wire_data['from_item'] == moved_node_item:
-                # Update start position
-                new_start_pos = moved_node_item.get_port_scene_pos(wire_data['from_port'])
-                wire_data['wire'].start_pos = new_start_pos
-                wire_data['wire'].update_path()
-            
-            if wire_data['to_item'] == moved_node_item:
-                # Update end position
-                new_end_pos = moved_node_item.get_port_scene_pos(wire_data['to_port'])
-                wire_data['wire'].end_pos = new_end_pos
-                wire_data['wire'].update_path()
-
-    def request_preview_update(self):
-        """Request preview update"""
-        self.preview_update_requested.emit()
-    
-    def cancel_connection(self):
-        """Cancel connection in progress"""
-        if self.temp_wire:
-            self.removeItem(self.temp_wire)
-            self.temp_wire = None
-        
-        self.connection_in_progress = False
-        self.connection_start_item = None
-        self.connection_start_port = None
-        
-    def mouseMoveEvent(self, event):
-        """Handle mouse move for connection preview"""
-        if self.connection_in_progress and self.temp_wire:
-            self.temp_wire.set_end_pos(event.scenePos())
-        super().mouseMoveEvent(event)
 
 class FlowchartView(BaseGraphicsView):
     """Flowchart editor view"""
@@ -401,7 +411,7 @@ class FlowchartView(BaseGraphicsView):
                 node = self.create_point_node_at(pos.x(), pos.y())
                 node.name = f"PP{self.node_counter}"
             elif element_type in ["Variable", "Switch", "Auxiliary Point", 
-                                "Auxiliary Line", "Auxiliary Curve", "Mark Point", "Comment"]:
+                                 "Auxiliary Line", "Auxiliary Curve", "Mark Point", "Comment"]:
                 # Create generic nodes for these types
                 node = self.create_generic_node_at(element_type, pos.x(), pos.y())
             

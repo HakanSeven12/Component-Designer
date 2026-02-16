@@ -55,19 +55,21 @@ class FlowchartNode(ABC):
         self.properties = {}
         self.next_nodes = []
     
-    def get_port_types(self):
-        """Get list of port types this node has
-        
-        Port types:
-        - 'to': Input port (receives data)
-        - 'from': Output port (sends data)
-        - 'start': Link start input port
-        - 'end': Link end output port
+    def get_input_ports(self):
+        """Get list of input port types this node has
         
         Returns:
-            list: List of port type strings
+            list: List of input port type strings
         """
-        return []  # Default: no ports
+        return []  # Default: no input ports
+    
+    def get_output_ports(self):
+        """Get list of output port types this node has
+        
+        Returns:
+            list: List of output port type strings
+        """
+        return []  # Default: no output ports
         
     def to_dict(self):
         """Convert node to dictionary for serialization"""
@@ -94,22 +96,6 @@ class FlowchartNode(ABC):
                 'value': self.name
             }
         ]
-    
-    @abstractmethod
-    def get_properties_widgets(self, parent_widget):
-        """Return dict of property name -> widget for properties panel
-        
-        Returns:
-            dict: {
-                'property_name': {
-                    'label': 'Display Label',
-                    'widget': QWidget instance,
-                    'getter': lambda: value,
-                    'setter': lambda value: None
-                }
-            }
-        """
-        pass
     
     @abstractmethod
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
@@ -178,9 +164,13 @@ class PointNode(FlowchartNode):
         self.computed_x = 0.0
         self.computed_y = 0.0
     
-    def get_port_types(self):
-        """Point nodes have 'to' (input) and 'from' (output) ports"""
-        return ['to', 'from']
+    def get_input_ports(self):
+        """Point nodes have 'to' as input port"""
+        return ['to']
+    
+    def get_output_ports(self):
+        """Point nodes have 'from' as output port"""
+        return ['from']
     
     def get_inline_properties(self):
         """Get properties for inline editing in flowchart"""
@@ -307,114 +297,6 @@ class PointNode(FlowchartNode):
                 
         return (self.computed_x, self.computed_y)
     
-    def get_properties_widgets(self, parent_widget):
-        """Return property widgets for Point node"""
-        from PySide2.QtWidgets import QComboBox, QDoubleSpinBox, QCheckBox, QLineEdit
-        
-        widgets = {}
-        
-        # Geometry type
-        geometry_combo = QComboBox(parent_widget)
-        for gt in PointGeometryType:
-            geometry_combo.addItem(gt.value, gt)
-        widgets['geometry_type'] = {
-            'label': 'Geometry Type:',
-            'widget': geometry_combo,
-            'getter': lambda: geometry_combo.currentData(),
-            'setter': lambda v: geometry_combo.setCurrentIndex(geometry_combo.findData(v))
-        }
-        
-        # Offset
-        offset_spin = QDoubleSpinBox(parent_widget)
-        offset_spin.setRange(-1000, 1000)
-        offset_spin.setDecimals(3)
-        widgets['offset'] = {
-            'label': 'Offset:',
-            'widget': offset_spin,
-            'getter': lambda: offset_spin.value(),
-            'setter': lambda v: offset_spin.setValue(v)
-        }
-        
-        # Elevation
-        elevation_spin = QDoubleSpinBox(parent_widget)
-        elevation_spin.setRange(-1000, 1000)
-        elevation_spin.setDecimals(3)
-        widgets['elevation'] = {
-            'label': 'Elevation:',
-            'widget': elevation_spin,
-            'getter': lambda: elevation_spin.value(),
-            'setter': lambda v: elevation_spin.setValue(v)
-        }
-        
-        # Delta X
-        delta_x_spin = QDoubleSpinBox(parent_widget)
-        delta_x_spin.setRange(-1000, 1000)
-        delta_x_spin.setDecimals(3)
-        widgets['delta_x'] = {
-            'label': 'Delta X:',
-            'widget': delta_x_spin,
-            'getter': lambda: delta_x_spin.value(),
-            'setter': lambda v: delta_x_spin.setValue(v)
-        }
-        
-        # Delta Y
-        delta_y_spin = QDoubleSpinBox(parent_widget)
-        delta_y_spin.setRange(-1000, 1000)
-        delta_y_spin.setDecimals(3)
-        widgets['delta_y'] = {
-            'label': 'Delta Y:',
-            'widget': delta_y_spin,
-            'getter': lambda: delta_y_spin.value(),
-            'setter': lambda v: delta_y_spin.setValue(v)
-        }
-        
-        # Slope
-        slope_spin = QDoubleSpinBox(parent_widget)
-        slope_spin.setRange(-10, 10)
-        slope_spin.setDecimals(3)
-        widgets['slope'] = {
-            'label': 'Slope:',
-            'widget': slope_spin,
-            'getter': lambda: slope_spin.value(),
-            'setter': lambda v: slope_spin.setValue(v)
-        }
-        
-        # From Point (combo will be populated by properties panel)
-        from_point_combo = QComboBox(parent_widget)
-        widgets['from_point'] = {
-            'label': 'From Point:',
-            'widget': from_point_combo,
-            'getter': lambda: from_point_combo.currentData(),
-            'setter': lambda v: from_point_combo.setCurrentIndex(from_point_combo.findData(v)),
-            'populate': 'points'  # Signal that this needs point list
-        }
-        
-        # Add link to from
-        add_link_check = QCheckBox("Add Link to From Point", parent_widget)
-        widgets['add_link_to_from'] = {
-            'label': '',
-            'widget': add_link_check,
-            'getter': lambda: add_link_check.isChecked(),
-            'setter': lambda v: add_link_check.setChecked(v)
-        }
-        
-        # Point codes
-        codes_edit = QLineEdit(parent_widget)
-        codes_edit.setPlaceholderText('"Code1","Code2"')
-        widgets['point_codes'] = {
-            'label': 'Point Codes:',
-            'widget': codes_edit,
-            'getter': lambda: self._parse_codes(codes_edit.text()),
-            'setter': lambda v: codes_edit.setText(','.join(f'"{c}"' for c in v))
-        }
-        
-        return widgets
-    
-    def _parse_codes(self, text):
-        """Parse comma-separated quoted strings"""
-        import re
-        return re.findall(r'"([^"]*)"', text)
-    
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Create preview items for point"""
         from PySide2.QtGui import QFont, QColor, QPen, QBrush
@@ -524,9 +406,13 @@ class LinkNode(FlowchartNode):
         self.material = "Asphalt"
         self.thickness = 0.0
     
-    def get_port_types(self):
-        """Link nodes have 'start' and 'end' ports"""
+    def get_input_ports(self):
+        """Link nodes have 'start' and 'end' as input ports"""
         return ['start', 'end']
+    
+    def get_output_ports(self):
+        """Link nodes have no output ports"""
+        return []
     
     def get_inline_properties(self):
         """Get properties for inline editing in flowchart"""
@@ -552,82 +438,6 @@ class LinkNode(FlowchartNode):
             }
         ]
         return properties
-    
-    def get_properties_widgets(self, parent_widget):
-        """Return property widgets for Link node"""
-        from PySide2.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit
-        
-        widgets = {}
-        
-        # Link type
-        link_type_combo = QComboBox(parent_widget)
-        for lt in LinkType:
-            link_type_combo.addItem(lt.value, lt)
-        widgets['link_type'] = {
-            'label': 'Link Type:',
-            'widget': link_type_combo,
-            'getter': lambda: link_type_combo.currentData(),
-            'setter': lambda v: link_type_combo.setCurrentIndex(link_type_combo.findData(v))
-        }
-        
-        # Start point
-        start_combo = QComboBox(parent_widget)
-        widgets['start_point'] = {
-            'label': 'Start Point:',
-            'widget': start_combo,
-            'getter': lambda: start_combo.currentData(),
-            'setter': lambda v: start_combo.setCurrentIndex(start_combo.findData(v)),
-            'populate': 'points'
-        }
-        
-        # End point
-        end_combo = QComboBox(parent_widget)
-        widgets['end_point'] = {
-            'label': 'End Point:',
-            'widget': end_combo,
-            'getter': lambda: end_combo.currentData(),
-            'setter': lambda v: end_combo.setCurrentIndex(end_combo.findData(v)),
-            'populate': 'points'
-        }
-        
-        # Link codes
-        codes_edit = QLineEdit(parent_widget)
-        codes_edit.setPlaceholderText('"Top","Pave"')
-        widgets['link_codes'] = {
-            'label': 'Link Codes:',
-            'widget': codes_edit,
-            'getter': lambda: self._parse_codes(codes_edit.text()),
-            'setter': lambda v: codes_edit.setText(','.join(f'"{c}"' for c in v))
-        }
-        
-        # Material
-        material_combo = QComboBox(parent_widget)
-        material_combo.addItems(["Asphalt", "Concrete", "Granular", "Soil"])
-        widgets['material'] = {
-            'label': 'Material:',
-            'widget': material_combo,
-            'getter': lambda: material_combo.currentText(),
-            'setter': lambda v: material_combo.setCurrentText(v)
-        }
-        
-        # Thickness
-        thickness_spin = QDoubleSpinBox(parent_widget)
-        thickness_spin.setRange(0, 10)
-        thickness_spin.setDecimals(3)
-        thickness_spin.setSuffix(" m")
-        widgets['thickness'] = {
-            'label': 'Thickness:',
-            'widget': thickness_spin,
-            'getter': lambda: thickness_spin.value(),
-            'setter': lambda v: thickness_spin.setValue(v)
-        }
-        
-        return widgets
-    
-    def _parse_codes(self, text):
-        """Parse comma-separated quoted strings"""
-        import re
-        return re.findall(r'"([^"]*)"', text)
     
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Create preview items for link"""
@@ -724,7 +534,11 @@ class ShapeNode(FlowchartNode):
         self.links = []
         self.material = "Asphalt"
     
-    def get_port_types(self):
+    def get_input_ports(self):
+        """Shape nodes have no ports"""
+        return []
+    
+    def get_output_ports(self):
         """Shape nodes have no ports"""
         return []
     
@@ -746,44 +560,8 @@ class ShapeNode(FlowchartNode):
         ]
         return properties
     
-    def get_properties_widgets(self, parent_widget):
-        """Return property widgets for Shape node"""
-        from PySide2.QtWidgets import QLineEdit, QListWidget, QPushButton
-        
-        widgets = {}
-        
-        # Shape codes
-        codes_edit = QLineEdit(parent_widget)
-        codes_edit.setPlaceholderText('"Pave"')
-        widgets['shape_codes'] = {
-            'label': 'Shape Codes:',
-            'widget': codes_edit,
-            'getter': lambda: self._parse_codes(codes_edit.text()),
-            'setter': lambda v: codes_edit.setText(','.join(f'"{c}"' for c in v))
-        }
-        
-        # Links list
-        links_list = QListWidget(parent_widget)
-        widgets['links'] = {
-            'label': 'Links:',
-            'widget': links_list,
-            'getter': lambda: self.links,
-            'setter': lambda v: None  # Read-only for now
-        }
-        
-        return widgets
-    
-    def _parse_codes(self, text):
-        """Parse comma-separated quoted strings"""
-        import re
-        return re.findall(r'"([^"]*)"', text)
-    
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Create preview items for shape"""
-        from PySide2.QtGui import QFont, QColor, QPen, QBrush, QPolygonF
-        from PySide2.QtCore import QPointF
-        from PySide2.QtWidgets import QGraphicsPolygonItem
-        
         items = []
         
         # This would need access to flowchart_nodes to resolve links
@@ -826,7 +604,11 @@ class DecisionNode(FlowchartNode):
         self.true_branch = []
         self.false_branch = []
     
-    def get_port_types(self):
+    def get_input_ports(self):
+        """Decision nodes have no ports for now"""
+        return []
+    
+    def get_output_ports(self):
         """Decision nodes have no ports for now"""
         return []
     
@@ -841,25 +623,6 @@ class DecisionNode(FlowchartNode):
             }
         ]
         return properties
-    
-    def get_properties_widgets(self, parent_widget):
-        """Return property widgets for Decision node"""
-        from PySide2.QtWidgets import QTextEdit
-        
-        widgets = {}
-        
-        # Condition
-        condition_edit = QTextEdit(parent_widget)
-        condition_edit.setMaximumHeight(60)
-        condition_edit.setPlaceholderText('e.g.: EG_Elevation > P1_Elevation')
-        widgets['condition'] = {
-            'label': 'Condition:',
-            'widget': condition_edit,
-            'getter': lambda: condition_edit.toPlainText(),
-            'setter': lambda v: condition_edit.setText(v)
-        }
-        
-        return widgets
     
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Decision nodes don't appear in preview"""
@@ -892,17 +655,17 @@ class StartNode(FlowchartNode):
     def __init__(self, node_id, name="START"):
         super().__init__(node_id, "Start", name)
     
-    def get_port_types(self):
-        """Start node has only 'from' (output) port"""
+    def get_input_ports(self):
+        """Start node has no input ports"""
+        return []
+    
+    def get_output_ports(self):
+        """Start node has 'from' as output port"""
         return ['from']
     
     def get_inline_properties(self):
         """Get properties for inline editing in flowchart"""
         return []  # START node has no editable properties
-    
-    def get_properties_widgets(self, parent_widget):
-        """Start node has no editable properties"""
-        return {}
     
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Start nodes don't appear in preview"""
@@ -938,7 +701,11 @@ class VariableNode(FlowchartNode):
         self.variable_name = ""
         self.expression = ""
     
-    def get_port_types(self):
+    def get_input_ports(self):
+        """Variable nodes have no ports"""
+        return []
+    
+    def get_output_ports(self):
         """Variable nodes have no ports"""
         return []
     
@@ -965,28 +732,6 @@ class VariableNode(FlowchartNode):
             }
         ]
         return properties
-    
-    def get_properties_widgets(self, parent_widget):
-        """Return property widgets for Variable node"""
-        from PySide2.QtWidgets import QLineEdit
-        
-        widgets = {}
-        
-        widgets['variable_name'] = {
-            'label': 'Variable Name:',
-            'widget': QLineEdit(parent_widget),
-            'getter': lambda: widgets['variable_name']['widget'].text(),
-            'setter': lambda v: widgets['variable_name']['widget'].setText(v)
-        }
-        
-        widgets['expression'] = {
-            'label': 'Expression:',
-            'widget': QLineEdit(parent_widget),
-            'getter': lambda: widgets['expression']['widget'].text(),
-            'setter': lambda v: widgets['expression']['widget'].setText(v)
-        }
-        
-        return widgets
     
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Variable nodes don't appear in preview"""
@@ -1021,13 +766,13 @@ class GenericNode(FlowchartNode):
     def __init__(self, node_id, node_type, name=""):
         super().__init__(node_id, node_type, name)
     
-    def get_port_types(self):
+    def get_input_ports(self):
         """Generic nodes have no ports"""
         return []
     
-    def get_properties_widgets(self, parent_widget):
-        """Generic node has no specific properties"""
-        return {}
+    def get_output_ports(self):
+        """Generic nodes have no ports"""
+        return []
     
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         """Generic nodes don't appear in preview"""

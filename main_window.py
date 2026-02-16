@@ -200,8 +200,9 @@ class ComponentDesigner(QMainWindow):
         self.toolbox.element_selected.connect(self.add_element_to_flowchart)
         self.show_codes_check.stateChanged.connect(self.toggle_codes)
         self.show_comments_check.stateChanged.connect(self.toggle_comments)
+        self.flowchart.scene.node_selected.connect(self.on_flowchart_node_selected)
         self.flowchart.scene.preview_update_requested.connect(self.update_preview)
-
+        
     def on_flowchart_node_selected(self, node):
         """Handle flowchart node selection"""
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
@@ -249,7 +250,7 @@ class ComponentDesigner(QMainWindow):
             self.flowchart.scene.clear()
             self.flowchart.scene.nodes.clear()
             self.flowchart.scene.connections.clear()
-            self.flowchart.scene.arrows.clear()
+            self.flowchart.scene.port_wires.clear()
             self.flowchart.scene.last_added_node = None
             
             # Reset counter
@@ -368,7 +369,7 @@ class ComponentDesigner(QMainWindow):
             self.flowchart.scene.clear()
             self.flowchart.scene.nodes.clear()
             self.flowchart.scene.connections.clear()
-            self.flowchart.scene.arrows.clear()
+            self.flowchart.scene.port_wires.clear()
             self.flowchart.scene.last_added_node = None
             self.flowchart.node_counter = 0
             
@@ -413,22 +414,15 @@ class ComponentDesigner(QMainWindow):
                 for conn in data['connections']:
                     from_id = conn['from']
                     to_id = conn['to']
+                    from_port = conn.get('from_port', 'from')
+                    to_port = conn.get('to_port', 'to')
                     
                     if from_id in node_map and to_id in node_map:
                         from_node = node_map[from_id]
                         to_node = node_map[to_id]
-                        self.flowchart.scene.connect_nodes(from_node, to_node)
-
-            # Load connections
-            if 'connections' in data:
-                for conn in data['connections']:
-                    from_id = conn['from']
-                    to_id = conn['to']
-                    
-                    if from_id in node_map and to_id in node_map:
-                        from_node = node_map[from_id]
-                        to_node = node_map[to_id]
-                        self.flowchart.scene.connect_nodes_with_wire(from_node, to_node)
+                        self.flowchart.scene.connect_nodes_with_wire(
+                            from_node, to_node, from_port, to_port
+                        )
 
             self.current_file = filename
             self.modified = False

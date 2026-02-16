@@ -2,16 +2,14 @@
 UI Panels for Component Designer
 Contains Parameters and Toolbox panels
 """
-from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox,
-                               QLineEdit, QDoubleSpinBox, QComboBox, QCheckBox, QTextEdit,
-                               QPushButton, QTableWidget, QTableWidgetItem, QListWidget,
-                               QTabWidget, QTreeWidget, QTreeWidgetItem, QAbstractItemView,
-                               QApplication, QScrollArea)
+from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+                               QLineEdit, QComboBox, QTextEdit, QPushButton,
+                               QTableWidget, QTableWidgetItem, QTabWidget,
+                               QTreeWidget, QTreeWidgetItem, QApplication)
 from PySide2.QtCore import Qt, Signal, QMimeData
 from PySide2.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
-from models import (PointGeometryType, LinkType, ParameterType, TargetType,
-                   PointNode, LinkNode, ShapeNode, DecisionNode, FlowchartNode)
+from models import ParameterType, TargetType
 
 
 class DraggableTreeWidget(QTreeWidget):
