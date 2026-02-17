@@ -26,13 +26,15 @@ from abc import ABC, abstractmethod
 # ---------------------------------------------------------------------------
 
 class PointGeometryType(Enum):
-    OFFSET_ELEVATION = "Offset and Elevation"
-    DELTA_XY         = "Delta X and Y"
-    DELTA_X_SLOPE    = "Delta X and Slope"
-    DELTA_Y_SLOPE    = "Delta Y and Slope"
+    ANGLE_DELTA_X    = "Angle and Delta X"
+    ANGLE_DELTA_Y    = "Angle and Delta Y"
+    ANGLE_DISTANCE   = "Angle and Distance"
+    DELTA_XY         = "Delta X and Delta Y"
     DELTA_X_SURFACE  = "Delta X on Surface"
-    OFFSET_TARGET    = "Offset to Target"
-    ELEVATION_TARGET = "Elevation to Target"
+    INTERPOLATE      = "Interpolate Point"
+    SLOPE_DELTA_X    = "Slope and Delta X"
+    SLOPE_DELTA_Y    = "Slope and Delta Y"
+    SLOPE_TO_SURFACE = "Slope to Surface"
 
 
 class LinkType(Enum):
@@ -83,26 +85,11 @@ class FlowchartNode(ABC):
         self.properties = {}
         self.next_nodes = []
 
-    # ------------------------------------------------------------------
-    # Port declarations  (override in subclasses)
-    # ------------------------------------------------------------------
-
     def get_input_ports(self) -> dict:
-        """
-        Return ordered dict  {port_name: port_type}  for input ports.
-        port_type: None | 'float' | 'string' | list[{'label','value'}]
-        """
         return {}
 
     def get_output_ports(self) -> dict:
-        """
-        Return ordered dict  {port_name: port_type}  for output ports.
-        """
         return {}
-
-    # ------------------------------------------------------------------
-    # Preview
-    # ------------------------------------------------------------------
 
     @abstractmethod
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
@@ -114,10 +101,6 @@ class FlowchartNode(ABC):
 
     def get_flowchart_display_text(self):
         return f"{self.type}\n{self.name}"
-
-    # ------------------------------------------------------------------
-    # Serialization
-    # ------------------------------------------------------------------
 
     def to_dict(self):
         return {
@@ -146,11 +129,11 @@ class PointNode(FlowchartNode):
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Point", name)
-        self.geometry_type = PointGeometryType.OFFSET_ELEVATION
-        self.offset        = 0.0
-        self.elevation     = 0.0
+        self.geometry_type = PointGeometryType.DELTA_XY
+        self.angle         = 0.0
         self.delta_x       = 0.0
         self.delta_y       = 0.0
+        self.distance      = 0.0
         self.slope         = 0.0
         self.from_point    = None
         self.point_codes   = []
@@ -169,33 +152,39 @@ class PointNode(FlowchartNode):
           'geometry_type' — combo selector
 
         Variable ports (depend on geometry_type):
-          offset, elevation, delta_x, delta_y, slope  — float inputs
+          angle, delta_x, delta_y, distance, slope  — float inputs
         """
         ports = {
-            'reference':        None,
-            'geometry_type':    _enum_options(PointGeometryType),
-            'add_link':         'bool',
+            'reference':     None,
+            'geometry_type': _enum_options(PointGeometryType),
+            'add_link':      'bool',
         }
 
         gt = self.geometry_type
-        if gt == PointGeometryType.OFFSET_ELEVATION:
-            ports['offset']    = 'float'
-            ports['elevation'] = 'float'
+        if gt == PointGeometryType.ANGLE_DELTA_X:
+            ports['angle']   = 'float'
+            ports['delta_x'] = 'float'
+        elif gt == PointGeometryType.ANGLE_DELTA_Y:
+            ports['angle']   = 'float'
+            ports['delta_y'] = 'float'
+        elif gt == PointGeometryType.ANGLE_DISTANCE:
+            ports['angle']    = 'float'
+            ports['distance'] = 'float'
         elif gt == PointGeometryType.DELTA_XY:
-            ports['delta_x']   = 'float'
-            ports['delta_y']   = 'float'
-        elif gt == PointGeometryType.DELTA_X_SLOPE:
-            ports['delta_x']   = 'float'
-            ports['slope']     = 'float'
-        elif gt == PointGeometryType.DELTA_Y_SLOPE:
-            ports['delta_y']   = 'float'
-            ports['slope']     = 'float'
+            ports['delta_x'] = 'float'
+            ports['delta_y'] = 'float'
         elif gt == PointGeometryType.DELTA_X_SURFACE:
-            ports['delta_x']   = 'float'
-        elif gt == PointGeometryType.OFFSET_TARGET:
-            ports['offset']    = 'float'
-        elif gt == PointGeometryType.ELEVATION_TARGET:
-            ports['elevation'] = 'float'
+            ports['delta_x'] = 'float'
+        elif gt == PointGeometryType.INTERPOLATE:
+            pass   # No numeric inputs — end point connected via wire
+        elif gt == PointGeometryType.SLOPE_DELTA_X:
+            ports['slope']   = 'float'
+            ports['delta_x'] = 'float'
+        elif gt == PointGeometryType.SLOPE_DELTA_Y:
+            ports['slope']   = 'float'
+            ports['delta_y'] = 'float'
+        elif gt == PointGeometryType.SLOPE_TO_SURFACE:
+            ports['slope'] = 'float'
 
         return ports
 
@@ -207,11 +196,10 @@ class PointNode(FlowchartNode):
         }
 
     # ------------------------------------------------------------------
-    # Port value accessors (used by node.py to populate editors)
+    # Port value accessors
     # ------------------------------------------------------------------
 
     def get_port_value(self, port_name):
-        """Return the current model value for a port that has an editor."""
         return getattr(self, port_name, None)
 
     def set_port_value(self, port_name, value):
@@ -223,40 +211,53 @@ class PointNode(FlowchartNode):
     # ------------------------------------------------------------------
 
     def compute_position(self, from_point_pos=None):
-        gt = self.geometry_type
+        import math
+        gt   = self.geometry_type
+        base = from_point_pos or (0.0, 0.0)
 
-        if gt == PointGeometryType.OFFSET_ELEVATION:
-            self.computed_x = self.offset
-            self.computed_y = self.elevation
+        if gt == PointGeometryType.ANGLE_DELTA_X:
+            # Move delta_x along angle direction
+            rad = math.radians(self.angle)
+            self.computed_x = base[0] + self.delta_x * math.cos(rad)
+            self.computed_y = base[1] + self.delta_x * math.sin(rad)
+
+        elif gt == PointGeometryType.ANGLE_DELTA_Y:
+            rad = math.radians(self.angle)
+            # delta_y projected along perpendicular of angle
+            self.computed_x = base[0] - self.delta_y * math.sin(rad)
+            self.computed_y = base[1] + self.delta_y * math.cos(rad)
+
+        elif gt == PointGeometryType.ANGLE_DISTANCE:
+            rad = math.radians(self.angle)
+            self.computed_x = base[0] + self.distance * math.cos(rad)
+            self.computed_y = base[1] + self.distance * math.sin(rad)
 
         elif gt == PointGeometryType.DELTA_XY:
-            base = from_point_pos or (0.0, 0.0)
             self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1] + self.delta_y
-
-        elif gt == PointGeometryType.DELTA_X_SLOPE:
-            base = from_point_pos or (0.0, 0.0)
-            self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1] + self.delta_x * self.slope
-
-        elif gt == PointGeometryType.DELTA_Y_SLOPE:
-            base = from_point_pos or (0.0, 0.0)
-            dx = self.delta_y / self.slope if self.slope != 0 else 0.0
-            self.computed_x = base[0] + dx
             self.computed_y = base[1] + self.delta_y
 
         elif gt == PointGeometryType.DELTA_X_SURFACE:
-            base = from_point_pos or (0.0, 0.0)
             self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1]  # TODO: surface elevation
+            self.computed_y = base[1]  # TODO: surface elevation lookup
 
-        elif gt == PointGeometryType.OFFSET_TARGET:
-            self.computed_x = self.offset
-            self.computed_y = 0.0  # TODO: from target
+        elif gt == PointGeometryType.INTERPOLATE:
+            # TODO: requires two reference points
+            self.computed_x = base[0]
+            self.computed_y = base[1]
 
-        elif gt == PointGeometryType.ELEVATION_TARGET:
-            self.computed_x = 0.0  # TODO: from target
-            self.computed_y = self.elevation
+        elif gt == PointGeometryType.SLOPE_DELTA_X:
+            self.computed_x = base[0] + self.delta_x
+            self.computed_y = base[1] + self.delta_x * self.slope
+
+        elif gt == PointGeometryType.SLOPE_DELTA_Y:
+            dx = (self.delta_y / self.slope) if self.slope != 0 else 0.0
+            self.computed_x = base[0] + dx
+            self.computed_y = base[1] + self.delta_y
+
+        elif gt == PointGeometryType.SLOPE_TO_SURFACE:
+            # TODO: requires surface target
+            self.computed_x = base[0]
+            self.computed_y = base[1]
 
         return (self.computed_x, self.computed_y)
 
@@ -312,15 +313,15 @@ class PointNode(FlowchartNode):
     def to_dict(self):
         d = super().to_dict()
         d.update({
-            'geometry_type':    self.geometry_type.value,
-            'offset':           self.offset,
-            'elevation':        self.elevation,
-            'delta_x':          self.delta_x,
-            'delta_y':          self.delta_y,
-            'slope':            self.slope,
-            'from_point':       self.from_point,
-            'point_codes':      self.point_codes,
-            'add_link':         self.add_link,
+            'geometry_type': self.geometry_type.value,
+            'angle':         self.angle,
+            'delta_x':       self.delta_x,
+            'delta_y':       self.delta_y,
+            'distance':      self.distance,
+            'slope':         self.slope,
+            'from_point':    self.from_point,
+            'point_codes':   self.point_codes,
+            'add_link':      self.add_link,
         })
         return d
 
@@ -329,19 +330,19 @@ class PointNode(FlowchartNode):
         node = cls(data['id'], data['name'])
         node.x = data.get('x', 0)
         node.y = data.get('y', 0)
-        gt_str = data.get('geometry_type', 'Offset and Elevation')
+        gt_str = data.get('geometry_type', 'Delta X and Delta Y')
         node.geometry_type = next(
             (gt for gt in PointGeometryType if gt.value == gt_str),
-            PointGeometryType.OFFSET_ELEVATION
+            PointGeometryType.DELTA_XY
         )
-        node.offset        = data.get('offset',    0.0)
-        node.elevation     = data.get('elevation', 0.0)
-        node.delta_x       = data.get('delta_x',   0.0)
-        node.delta_y       = data.get('delta_y',   0.0)
-        node.slope         = data.get('slope',     0.0)
-        node.from_point    = data.get('from_point')
-        node.point_codes   = data.get('point_codes', [])
-        node.add_link = data.get('add_link', True)
+        node.angle       = data.get('angle',    0.0)
+        node.delta_x     = data.get('delta_x',  0.0)
+        node.delta_y     = data.get('delta_y',  0.0)
+        node.distance    = data.get('distance', 0.0)
+        node.slope       = data.get('slope',    0.0)
+        node.from_point  = data.get('from_point')
+        node.point_codes = data.get('point_codes', [])
+        node.add_link    = data.get('add_link', True)
         return node
 
 
