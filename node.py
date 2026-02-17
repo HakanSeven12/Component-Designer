@@ -1,603 +1,699 @@
 """
 Node Widgets for Flowchart
-Contains port widgets and node item classes
+
+Architecture
+------------
+- Every port — geometry flow, numeric value, combo selector — is a PortRow.
+- Input ports  → left side  (orange dot)
+- Output ports → right side (green dot)
+- No separate "properties" form area; all parameters are ports.
+- All sizes are layout-driven; no hardcoded pixel dimensions.
 """
 
-from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, 
-                               QLabel, QLineEdit, QDoubleSpinBox, QComboBox,
-                               QGraphicsProxyWidget, QGraphicsRectItem, QStyle)
-from PySide2.QtCore import Qt, Signal, QPointF
+from PySide2.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QDoubleSpinBox, QComboBox,
+    QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
+)
+from PySide2.QtCore import Qt, Signal, QPointF, QSize
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QFont
 
 
-class PortWidget(QWidget):
-    """Connection port widget for nodes"""
-    
-    port_clicked = Signal(object, str)  # (node, port_type)
-    
-    PORT_COLORS = {
-        'from': QColor(100, 200, 100),    # Green for output
-        'to': QColor(255, 150, 50),       # Orange for input
-        'start': QColor(255, 150, 50),    # Orange for input (link start)
-        'end': QColor(255, 150, 50),      # Orange for input (link end)
-    }
-    
-    PORT_LABELS = {
-        'from': 'OUT',
-        'to': 'IN',
-        'start': 'START',
-        'end': 'END'
-    }
-    
-    def __init__(self, node, port_type, port_direction, parent=None):
-        super().__init__(parent)
-        self.node = node
-        self.port_type = port_type  # 'from', 'to', 'start', 'end'
-        self.port_direction = port_direction  # 'input' or 'output'
-        self.is_hovered = False
-        self.setFixedHeight(24)
-        self.setMinimumWidth(50)
-        self.setCursor(Qt.PointingHandCursor)
-        
-    def paintEvent(self, event):
-        """Draw the port as a button with label"""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Port color based on type
-        color = self.PORT_COLORS.get(self.port_type, QColor(150, 150, 150))
-        
-        # Lighten color on hover
-        if self.is_hovered:
-            color = color.lighter(120)
-        
-        # Draw button background
-        painter.setPen(QPen(QColor(60, 60, 60), 2))
-        painter.setBrush(QBrush(color))
-        painter.drawRoundedRect(2, 2, self.width() - 4, self.height() - 4, 4, 4)
-        
-        # Draw label
-        painter.setPen(QPen(Qt.white))
-        font = QFont()
-        font.setBold(True)
-        font.setPointSize(7)
-        painter.setFont(font)
-        
-        label = self.PORT_LABELS.get(self.port_type, self.port_type.upper())
-        painter.drawText(self.rect(), Qt.AlignCenter, label)
-    
-    def enterEvent(self, event):
-        """Handle mouse enter"""
-        self.is_hovered = True
-        self.update()
-        
-    def leaveEvent(self, event):
-        """Handle mouse leave"""
-        self.is_hovered = False
-        self.update()
-    
-    def mousePressEvent(self, event):
-        """Handle port click"""
-        if event.button() == Qt.LeftButton:
-            self.port_clicked.emit(self.node, self.port_type)
-            event.accept()
+# ---------------------------------------------------------------------------
+# Visual constants  (true constants only — no layout pixel values)
+# ---------------------------------------------------------------------------
 
+INPUT_COLOR   = QColor(255, 150,  50)   # Orange — all input  port dots
+OUTPUT_COLOR  = QColor(100, 200, 100)   # Green  — all output port dots
+HEADER_BG          = QColor( 70, 130, 180)
+HEADER_BG_SELECTED = QColor(255, 140,   0)
+BODY_BG            = QColor(248, 248, 252)
+BORDER_NORMAL      = QColor( 60,  60,  60)
+BORDER_SELECTED    = QColor(255, 120,   0)
+SHADOW_COLOR       = QColor(  0,   0,   0, 30)
+GLOW_COLOR         = QColor(255, 120,   0, 80)
+DOT_RADIUS = 5   # connection dot radius in px
+
+
+# ---------------------------------------------------------------------------
+# PortDot
+# ---------------------------------------------------------------------------
+
+class PortDot(QWidget):
+    """Clickable circle that anchors a wire. Size from sizeHint — no fixed px."""
+
+    clicked = Signal()
+
+    def __init__(self, color: QColor, parent=None):
+        super().__init__(parent)
+        self._color   = color
+        self._hovered = False
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+    def sizeHint(self):
+        d = DOT_RADIUS * 2 + 6   # dot diameter + padding
+        return QSize(d, d)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        c = self._color.lighter(130) if self._hovered else self._color
+        p.setPen(QPen(c.darker(140), 1))
+        p.setBrush(QBrush(c))
+        r  = DOT_RADIUS
+        cx = self.width()  // 2
+        cy = self.height() // 2
+        p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+
+    def enterEvent(self, e):
+        self._hovered = True;  self.update()
+
+    def leaveEvent(self, e):
+        self._hovered = False; self.update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self.clicked.emit()
+            e.accept()
+
+
+# ---------------------------------------------------------------------------
+# PortRow
+# ---------------------------------------------------------------------------
+
+EDITOR_STYLE = """
+    QDoubleSpinBox, QLineEdit, QComboBox {
+        background: white; border: 1px solid #c0c0c0;
+        border-radius: 3px; padding: 1px 4px; font-size: 8pt;
+    }
+    QDoubleSpinBox:focus, QLineEdit:focus, QComboBox:focus {
+        border: 2px solid #4682B4;
+    }
+    QComboBox::drop-down { border: none; width: 18px; }
+    QComboBox::down-arrow {
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 5px solid #555; margin-right: 4px;
+    }
+"""
+
+EDITOR_STYLE_DISABLED = EDITOR_STYLE.replace(
+    "background: white", "background: #e0e0e0"
+)
+
+
+# ---------------------------------------------------------------------------
+# ComboField  — label + combobox, no connection dot, stacked vertically
+# ---------------------------------------------------------------------------
+
+COMBO_STYLE = """
+    QComboBox {
+        background: white; border: 1px solid #c0c0c0;
+        border-radius: 3px; padding: 2px 4px; font-size: 8pt;
+    }
+    QComboBox:focus { border: 2px solid #4682B4; }
+    QComboBox::drop-down { border: none; width: 18px; }
+    QComboBox::down-arrow {
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        border-top: 5px solid #555; margin-right: 4px;
+    }
+"""
+
+LABEL_STYLE = "QLabel { font-size: 8pt; color: #444; background: transparent; }"
+
+
+class ComboField(QWidget):
+    """
+    A standalone combo selector — no connection dot.
+
+    Layout (vertical):
+        Label
+        [ComboBox ▼]
+    """
+
+    value_changed = Signal(str, object)  # (field_name, new_value)
+
+    def __init__(self, field_name, field_label, options, current_value=None, parent=None):
+        super().__init__(parent)
+        self.field_name = field_name
+
+        lay = QVBoxLayout()
+        lay.setContentsMargins(4, 2, 4, 2)
+        lay.setSpacing(2)
+
+        lbl = QLabel(field_label)
+        lbl.setStyleSheet(LABEL_STYLE)
+        lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        self._combo = QComboBox()
+        for opt in (options or []):
+            self._combo.addItem(opt['label'], opt['value'])
+        if current_value is not None:
+            idx = self._combo.findData(current_value)
+            if idx >= 0:
+                self._combo.setCurrentIndex(idx)
+        self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._combo.setStyleSheet(COMBO_STYLE)
+        self._combo.currentIndexChanged.connect(
+            lambda _: self.value_changed.emit(self.field_name, self._combo.currentData())
+        )
+
+        lay.addWidget(lbl)
+        lay.addWidget(self._combo)
+        self.setLayout(lay)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background: transparent;")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+
+# ---------------------------------------------------------------------------
+# PortRow  — a single connectable port row (None / float / string only)
+# ---------------------------------------------------------------------------
+
+class PortRow(QWidget):
+    """
+    One connectable port row.
+
+    Input  layout:  [dot] [label] [editor?] ···
+    Output layout:  ··· [editor?] [label] [dot]
+
+    editor_type:
+      None     → pure flow port (dot + label, no editor)
+      'float'  → QDoubleSpinBox
+      'string' → QLineEdit
+
+    Combo (list) ports are NOT handled here — use ComboField instead.
+    """
+
+    port_clicked  = Signal(object, str)   # (FlowchartNodeItem, port_name)
+    value_changed = Signal(str,   object) # (port_name, new_value)
+
+    def __init__(self, port_name, port_label, direction,
+                 editor_type=None, editor_value=None,
+                 node_item_ref=None, parent=None):
+        super().__init__(parent)
+        self.port_name     = port_name
+        self.direction     = direction      # 'input' | 'output'
+        self.node_item_ref = node_item_ref
+        self._connected    = False
+
+        color     = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
+        self._dot = PortDot(color, self)
+        self._dot.clicked.connect(self._on_dot_clicked)
+
+        self._label = QLabel(port_label)
+        self._label.setStyleSheet(
+            "QLabel { font-size: 8pt; color: #1a1a1a; background: transparent; }"
+        )
+        self._label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        self._editor = self._make_editor(editor_type, editor_value)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 1, 0, 1)
+        row.setSpacing(4)
+
+        if direction == 'input':
+            row.addWidget(self._dot,   0, Qt.AlignVCenter)
+            row.addWidget(self._label, 0, Qt.AlignVCenter)
+            if self._editor:
+                row.addWidget(self._editor, 1)
+            else:
+                row.addStretch(1)
+        else:
+            if self._editor:
+                row.addWidget(self._editor, 1)
+            else:
+                row.addStretch(1)
+            row.addWidget(self._label, 0, Qt.AlignVCenter)
+            row.addWidget(self._dot,   0, Qt.AlignVCenter)
+
+        self.setLayout(row)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background: transparent;")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+    # ------------------------------------------------------------------
+    # Editor factory (float / string only)
+    # ------------------------------------------------------------------
+
+    def _make_editor(self, etype, value):
+        if etype == 'float':
+            w = QDoubleSpinBox()
+            w.setRange(-1e6, 1e6)
+            w.setDecimals(4)
+            w.setValue(float(value) if value is not None else 0.0)
+            w.setMinimumWidth(75)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            w.setStyleSheet(EDITOR_STYLE)
+            w.valueChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
+            return w
+
+        if etype == 'string':
+            w = QLineEdit(str(value) if value is not None else "")
+            w.setMinimumWidth(75)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            w.setStyleSheet(EDITOR_STYLE)
+            w.textChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
+            return w
+
+        return None   # pure flow port — dot + label only
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_node_item(self, node_item):
+        self.node_item_ref = node_item
+
+    def set_connected(self, connected: bool):
+        """Grey-out the editor when a wire is attached."""
+        self._connected = connected
+        if self._editor is None:
+            return
+        style = EDITOR_STYLE_DISABLED if connected else EDITOR_STYLE
+        self._editor.setStyleSheet(style)
+        if isinstance(self._editor, (QDoubleSpinBox, QLineEdit)):
+            self._editor.setReadOnly(connected)
+
+    def dot_scene_pos(self) -> QPointF:
+        """Scene-space centre of the connection dot."""
+        if self.node_item_ref is None:
+            return QPointF(0, 0)
+        local = self.mapTo(
+            self.node_item_ref.container_widget,
+            (QPointF(self._dot.x(), self._dot.y()) +
+             QPointF(self._dot.width() / 2, self._dot.height() / 2)).toPoint(),
+        )
+        return self.node_item_ref.proxy.mapToScene(local)
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _on_dot_clicked(self):
+        if self.node_item_ref:
+            self.port_clicked.emit(self.node_item_ref, self.port_name)
+
+
+# ---------------------------------------------------------------------------
+# FlowchartNodeItem
+# ---------------------------------------------------------------------------
 
 class FlowchartNodeItem(QGraphicsRectItem):
-    """Draggable flowchart node item with inline editing - Dynamo style"""
+    """
+    Draggable flowchart node.
+
+    ┌──────────────────────────────────────┐
+    │  Type · Name            (header)     │
+    ├──────────────────────────────────────┤
+    │ ● IN   [editor]  [editor]  OUT ●    │
+    │ ● START          [editor]    X ●    │
+    │ ● END                        Y ●    │
+    └──────────────────────────────────────┘
+
+    All sizing is driven by QLayout.
+    """
 
     def __init__(self, node, x, y, parent=None):
-        # Start with a default size, will be updated
-        super().__init__(0, 0, 200, 100, parent)
+        super().__init__(0, 0, 10, 10, parent)
         self.node = node
         self.setPos(x, y)
-        self.setFlags(QGraphicsRectItem.ItemIsMovable | 
-                     QGraphicsRectItem.ItemIsSelectable |
-                     QGraphicsRectItem.ItemSendsGeometryChanges)
-        
-        # Visual styling
-        self.normal_pen = QPen(QColor(60, 60, 60), 2)
-        self.selected_pen = QPen(QColor(255, 120, 0), 3)
-        self.header_brush = QBrush(QColor(70, 130, 180))
-        self.body_brush = QBrush(QColor(245, 245, 250))
-        self.selected_header_brush = QBrush(QColor(255, 140, 0))
+        self.setFlags(
+            QGraphicsRectItem.ItemIsMovable |
+            QGraphicsRectItem.ItemIsSelectable |
+            QGraphicsRectItem.ItemSendsGeometryChanges,
+        )
 
-        self.header_height = 35
-        
-        # Port widgets - dynamic based on node type
-        self.ports = {}  # Dictionary: port_type -> PortWidget
-        
-        # Create container widget with layout
+        # port_name → PortRow
+        self.ports: dict = {}
+
+        # ── container ─────────────────────────────────────────────────
         self.container_widget = QWidget()
-        self.container_widget.setStyleSheet("""
-            QWidget {
-                background-color: transparent;
-            }
-        """)
-        
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # Create header
-        self.create_header(main_layout)
-        
-        # Create body
-        self.create_body(main_layout)
-        
-        self.container_widget.setLayout(main_layout)
-        
-        # Create proxy widget to embed in graphics scene
+        self.container_widget.setAttribute(Qt.WA_TranslucentBackground)
+        self.container_widget.setStyleSheet("background: transparent;")
+
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._header_widget = self._build_header()
+        root.addWidget(self._header_widget)
+
+        self._body_widget, self._body_layout = self._build_body()
+        root.addWidget(self._body_widget)
+
+        self.container_widget.setLayout(root)
+
+        # ── proxy ──────────────────────────────────────────────────────
         self.proxy = QGraphicsProxyWidget(self)
         self.proxy.setWidget(self.container_widget)
         self.proxy.setPos(0, 0)
-        
-        # Update node size based on container
+
+        # Back-fill node_item references
+        for pr in self.ports.values():
+            pr.set_node_item(self)
+
         self.update_size()
-        
-        # Store node reference
         self.setData(0, node)
-    
-    def create_header(self, main_layout):
-        """Create header widget"""
-        self.header_widget = QWidget()
-        self.header_widget.setFixedHeight(self.header_height)
-        self.header_widget.setStyleSheet("""
-            QWidget {
-                background-color: transparent;
-            }
-        """)
-        header_layout = QVBoxLayout()
-        header_layout.setContentsMargins(10, 8, 10, 8)
-        
-        # Create header with editable name
-        self.header_label = QLabel(f"{self.node.type}: {self.node.name}")
-        self.header_label.setStyleSheet("""
-            QLabel {
-                color: white;
-                font-weight: bold;
-                font-size: 9pt;
-                background-color: transparent;
-            }
-        """)
-        self.header_label.setAlignment(Qt.AlignCenter)
-        self.header_label.mouseDoubleClickEvent = self.edit_name
-        self.header_label.setCursor(Qt.PointingHandCursor)
-        
-        # Line edit for name (hidden by default)
-        self.name_edit = QLineEdit(self.node.name)
-        self.name_edit.setStyleSheet("""
-            QLineEdit {
-                color: white;
-                font-weight: bold;
-                font-size: 9pt;
-                background-color: rgba(255, 255, 255, 30);
-                border: 1px solid white;
-                border-radius: 3px;
-                padding: 2px;
-            }
-        """)
-        self.name_edit.setAlignment(Qt.AlignCenter)
-        self.name_edit.hide()
-        self.name_edit.returnPressed.connect(self.finish_name_edit)
-        self.name_edit.editingFinished.connect(self.finish_name_edit)
-        
-        header_layout.addWidget(self.header_label)
-        header_layout.addWidget(self.name_edit)
-        self.header_widget.setLayout(header_layout)
-        
-        main_layout.addWidget(self.header_widget)
-    
-    def create_body(self, main_layout):
-        """Create body widget with ports and properties"""
-        self.body_widget = QWidget()
-        self.body_widget.setStyleSheet("""
-            QWidget {
-                background-color: transparent;
-            }
-            QLabel {
-                color: #282828;
-                font-size: 8pt;
-                background-color: transparent;
-            }
-        """)
-        
-        body_layout = QVBoxLayout()
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
-        
-        # Add ports if node has any
-        input_ports = self.node.get_input_ports()
-        output_ports = self.node.get_output_ports()
-        
-        if input_ports or output_ports:
-            self.create_ports(body_layout)
-        
-        # Form layout for properties
-        self.form_layout = QFormLayout()
-        self.form_layout.setContentsMargins(10, 8, 10, 8)
-        self.form_layout.setSpacing(6)
-        self.form_layout.setHorizontalSpacing(8)
-        
-        # Add properties to form
-        self.property_widgets = []
-        self.create_property_widgets()
-        
-        form_container = QWidget()
-        form_container.setLayout(self.form_layout)
-        body_layout.addWidget(form_container)
-        
-        self.body_widget.setLayout(body_layout)
-        main_layout.addWidget(self.body_widget)
-    
-    def create_ports(self, body_layout):
-        """Create port widgets based on node's input and output ports"""
-        ports_widget = QWidget()
-        ports_layout = QHBoxLayout()
-        ports_layout.setContentsMargins(10, 8, 10, 8)
-        ports_layout.setSpacing(8)
-        
-        # Get input and output ports separately
-        input_ports = self.node.get_input_ports()
-        output_ports = self.node.get_output_ports()
-        
-        # Add input ports on the left
-        if input_ports:
-            input_container = QWidget()
-            input_layout = QVBoxLayout()
-            input_layout.setContentsMargins(0, 0, 0, 0)
-            input_layout.setSpacing(4)
-            
-            for port_type in input_ports:
-                port = PortWidget(self.node, port_type, 'input')
-                port.port_clicked.connect(self.on_port_clicked)
-                self.ports[port_type] = port
-                input_layout.addWidget(port)
-            
-            input_container.setLayout(input_layout)
-            ports_layout.addWidget(input_container)
-        
-        # Add spacer in the middle
-        ports_layout.addStretch()
-        
-        # Add output ports on the right
-        if output_ports:
-            output_container = QWidget()
-            output_layout = QVBoxLayout()
-            output_layout.setContentsMargins(0, 0, 0, 0)
-            output_layout.setSpacing(4)
-            
-            for port_type in output_ports:
-                port = PortWidget(self.node, port_type, 'output')
-                port.port_clicked.connect(self.on_port_clicked)
-                self.ports[port_type] = port
-                output_layout.addWidget(port)
-            
-            output_container.setLayout(output_layout)
-            ports_layout.addWidget(output_container)
-        
-        ports_widget.setLayout(ports_layout)
-        body_layout.addWidget(ports_widget)
-    
-    def on_port_clicked(self, node, port_type):
-        """Handle port click - start or finish connection"""
-        if self.scene():
-            self.scene().handle_port_click(self, port_type)
-    
-    def get_port_scene_pos(self, port_type):
-        """Get port position in scene coordinates (center of port button)"""
-        if port_type in self.ports:
-            port = self.ports[port_type]
-            # Get center point of the port widget
-            port_rect = port.rect()
-            port_center = QPointF(port_rect.center())
-            # Map to container widget
-            widget_pos = port.mapTo(self.container_widget, port_center.toPoint())
-            # Map to scene
-            proxy_pos = self.proxy.mapToScene(widget_pos)
-            return proxy_pos
-        return self.scenePos()
-    
-    def edit_name(self, event):
-        """Start editing node name"""
-        self.header_label.hide()
-        self.name_edit.setText(self.node.name)
-        self.name_edit.show()
-        self.name_edit.setFocus()
-        self.name_edit.selectAll()
-    
-    def finish_name_edit(self):
-        """Finish editing node name"""
-        new_name = self.name_edit.text().strip()
-        if new_name:
-            self.node.name = new_name
-            self.header_label.setText(f"{self.node.type}: {self.node.name}")
-            self.update_size()
-            
-            # Trigger preview update
-            if self.scene():
-                self.scene().request_preview_update()
-        
-        self.name_edit.hide()
-        self.header_label.show()
-    
-    def rebuild_properties(self):
-        """Rebuild property widgets (used when geometry type changes)"""
-        # Clear existing widgets
-        while self.form_layout.count():
-            item = self.form_layout.takeAt(0)
+
+    # ==================================================================
+    # Header
+    # ==================================================================
+
+    def _build_header(self):
+        w = QWidget()
+        w.setAttribute(Qt.WA_TranslucentBackground)
+        w.setStyleSheet("background: transparent;")
+        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        lay = QHBoxLayout()
+        lay.setContentsMargins(8, 5, 8, 5)
+
+        self._header_label = QLabel(f"{self.node.type}  ·  {self.node.name}")
+        self._header_label.setStyleSheet(
+            "QLabel { color: white; font-weight: bold; font-size: 9pt;"
+            " background: transparent; }"
+        )
+        self._header_label.setAlignment(Qt.AlignCenter)
+        self._header_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._header_label.mouseDoubleClickEvent = lambda e: self.edit_name()
+
+        self._name_edit = QLineEdit(self.node.name)
+        self._name_edit.setAlignment(Qt.AlignCenter)
+        self._name_edit.setStyleSheet(
+            "QLineEdit { color: white; font-weight: bold; font-size: 9pt;"
+            " background: rgba(255,255,255,40); border: 1px solid white;"
+            " border-radius: 3px; padding: 2px; }"
+        )
+        self._name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._name_edit.hide()
+        self._name_edit.returnPressed.connect(self._finish_rename)
+        self._name_edit.editingFinished.connect(self._finish_rename)
+
+        lay.addWidget(self._header_label)
+        lay.addWidget(self._name_edit)
+        w.setLayout(lay)
+        return w
+
+    # ==================================================================
+    # Body — port rows
+    # ==================================================================
+
+    def _build_body(self):
+        w = QWidget()
+        w.setAttribute(Qt.WA_TranslucentBackground)
+        w.setStyleSheet("background: transparent;")
+        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        lay = QVBoxLayout()
+        lay.setContentsMargins(6, 4, 6, 4)
+        lay.setSpacing(2)
+
+        self._populate_port_rows(lay)
+        lay.addStretch(0)
+
+        w.setLayout(lay)
+        return w, lay
+
+    def _populate_port_rows(self, layout):
+        """
+        Build the body content from port declarations.
+
+        get_input_ports() / get_output_ports() → {port_name: port_type}
+
+        port_type:
+          None       → pure flow port  → PortRow (dot + label)
+          'float'    → value port      → PortRow (dot + label + spinbox)
+          'string'   → value port      → PortRow (dot + label + lineedit)
+          list[dict] → combo selector  → ComboField (label / combobox, NO dot)
+
+        Combo fields are collected first and rendered in a dedicated section
+        at the top of the body.  Connectable port rows follow, paired
+        left (input) / right (output) where possible.
+        """
+        self.ports.clear()
+
+        inputs    = self.node.get_input_ports()   # {name: type}
+        outputs   = self.node.get_output_ports()  # {name: type}
+
+        # Split inputs into combos vs connectable ports
+        combo_inputs = {n: t for n, t in inputs.items()  if isinstance(t, list)}
+        port_inputs  = {n: t for n, t in inputs.items()  if not isinstance(t, list)}
+        # Outputs are always connectable (list outputs not expected but guard anyway)
+        port_outputs = {n: t for n, t in outputs.items() if not isinstance(t, list)}
+
+        # ── 1. Combo fields (no dot) ──────────────────────────────────
+        if combo_inputs:
+            combo_section = QWidget()
+            combo_section.setAttribute(Qt.WA_TranslucentBackground)
+            combo_section.setStyleSheet("background: transparent;")
+            cslay = QVBoxLayout()
+            cslay.setContentsMargins(4, 2, 4, 4)
+            cslay.setSpacing(4)
+
+            for name, options in combo_inputs.items():
+                lbl   = name.replace('_', ' ').title()
+                val   = getattr(self.node, name, None)
+                cf    = ComboField(name, lbl, options, val)
+                cf.value_changed.connect(self._on_value_changed)
+                cslay.addWidget(cf)
+                # Store in a separate dict so rebuild can find them
+                # (combo fields are not in self.ports — they have no dot)
+
+            combo_section.setLayout(cslay)
+            layout.addWidget(combo_section)
+
+            # Thin separator line between combo section and port rows
+            sep = QWidget()
+            sep.setFixedHeight(1)
+            sep.setStyleSheet("background: #d0d0d0;")
+            sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            layout.addWidget(sep)
+
+        # ── 2. Connectable port rows ──────────────────────────────────
+        in_items  = list(port_inputs.items())
+        out_items = list(port_outputs.items())
+        n = max(len(in_items), len(out_items), 1) if (in_items or out_items) else 0
+
+        def make_port_row(port_name, port_type, direction):
+            etype = port_type if port_type in ('float', 'string') else None
+            eval_ = getattr(self.node, port_name, None) if etype else None
+            lbl   = port_name.replace('_', ' ').title()
+            pr = PortRow(
+                port_name    = port_name,
+                port_label   = lbl,
+                direction    = direction,
+                editor_type  = etype,
+                editor_value = eval_,
+                node_item_ref= None,
+            )
+            pr.value_changed.connect(self._on_value_changed)
+            pr.port_clicked.connect(self._on_port_clicked)
+            self.ports[port_name] = pr
+            return pr
+
+        for i in range(n):
+            in_entry  = in_items[i]  if i < len(in_items)  else None
+            out_entry = out_items[i] if i < len(out_items) else None
+
+            pair = QWidget()
+            pair.setAttribute(Qt.WA_TranslucentBackground)
+            pair.setStyleSheet("background: transparent;")
+            pair_lay = QHBoxLayout()
+            pair_lay.setContentsMargins(0, 0, 0, 0)
+            pair_lay.setSpacing(6)
+
+            if in_entry:
+                pair_lay.addWidget(make_port_row(in_entry[0], in_entry[1], 'input'), 1)
+            else:
+                pair_lay.addStretch(1)
+
+            if out_entry:
+                pair_lay.addWidget(make_port_row(out_entry[0], out_entry[1], 'output'), 1)
+            else:
+                pair_lay.addStretch(1)
+
+            pair.setLayout(pair_lay)
+            layout.addWidget(pair)
+
+        for name, ptype in in_items[n:]:
+            layout.addWidget(make_port_row(name, ptype, 'input'))
+
+        for name, ptype in out_items[n:]:
+            layout.addWidget(make_port_row(name, ptype, 'output'))
+
+    # ==================================================================
+    # Rebuild (after a combo changes the port structure)
+    # ==================================================================
+
+    def rebuild_ports(self):
+        lay = self._body_layout
+        # Remove everything except the final stretch
+        while lay.count():
+            item = lay.takeAt(0)
             if item.widget():
+                item.widget().setParent(None)
                 item.widget().deleteLater()
-        
-        self.property_widgets.clear()
-        
-        # Recreate widgets
-        self.create_property_widgets()
-        
-        # Update size
+        self.ports.clear()
+
+        self._populate_port_rows(lay)
+        lay.addStretch(0)
+
+        for pr in self.ports.values():
+            pr.set_node_item(self)
+
         self.update_size()
-    
-    def create_property_widgets(self):
-        """Create property widgets using form layout"""
-        properties = self.node.get_inline_properties()
-        
-        for prop_info in properties:
-            prop_name = prop_info['name']
-            prop_label = prop_info['label']
-            prop_type = prop_info['type']
-            prop_value = prop_info['value']
-            
-            # Skip name property (it's in header)
-            if prop_name == 'name':
-                continue
-            
-            # Create label
-            label = QLabel(prop_label + ":")
-            
-            # Create widget based on type
-            widget = None
-            
-            if prop_type == 'float':
-                widget = self.create_float_widget(prop_name, prop_value)
-            elif prop_type == 'string':
-                widget = self.create_string_widget(prop_name, prop_value)
-            elif prop_type == 'combo':
-                widget = self.create_combo_widget(prop_name, prop_value, prop_info)
-            
-            if widget:
-                self.form_layout.addRow(label, widget)
-                self.property_widgets.append({
-                    'name': prop_name,
-                    'widget': widget,
-                    'label': label
-                })
-    
-    def create_float_widget(self, prop_name, prop_value):
-        """Create float spinbox widget"""
-        widget = QDoubleSpinBox()
-        widget.setRange(-10000, 10000)
-        widget.setDecimals(3)
-        widget.setValue(prop_value)
-        widget.setMinimumWidth(80)
-        widget.setStyleSheet("""
-            QDoubleSpinBox {
-                background-color: white;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-                padding: 3px;
-                font-size: 8pt;
-            }
-            QDoubleSpinBox:focus {
-                border: 2px solid #4682B4;
-            }
-        """)
-        widget.valueChanged.connect(lambda v, p=prop_name: self.on_property_changed(p, v))
-        return widget
-    
-    def create_string_widget(self, prop_name, prop_value):
-        """Create string line edit widget"""
-        widget = QLineEdit()
-        widget.setText(str(prop_value))
-        widget.setMinimumWidth(80)
-        widget.setStyleSheet("""
-            QLineEdit {
-                background-color: white;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-                padding: 3px;
-                font-size: 8pt;
-            }
-            QLineEdit:focus {
-                border: 2px solid #4682B4;
-            }
-        """)
-        widget.textChanged.connect(lambda v, p=prop_name: self.on_property_changed(p, v))
-        return widget
-    
-    def create_combo_widget(self, prop_name, prop_value, prop_info):
-        """Create combobox widget"""
-        widget = QComboBox()
-        for option in prop_info['options']:
-            widget.addItem(option['label'], option['value'])
-        # Set current value
-        index = widget.findData(prop_value)
-        if index >= 0:
-            widget.setCurrentIndex(index)
-        widget.setMinimumWidth(80)
-        widget.setStyleSheet("""
-            QComboBox {
-                background-color: white;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-                padding: 3px;
-                font-size: 8pt;
-            }
-            QComboBox:focus {
-                border: 2px solid #4682B4;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid #666;
-                margin-right: 5px;
-            }
-        """)
-        # Special handling for geometry_type combo
-        if prop_name == 'geometry_type':
-            widget.currentIndexChanged.connect(lambda idx, p=prop_name, w=widget: self.on_geometry_type_changed(p, w.currentData()))
-        else:
-            widget.currentIndexChanged.connect(lambda idx, p=prop_name, w=widget: self.on_property_changed(p, w.currentData()))
-        return widget
-    
-    def on_geometry_type_changed(self, prop_name, value):
-        """Handle geometry type change - rebuild properties"""
-        # Update node property
-        if hasattr(self.node, prop_name):
-            setattr(self.node, prop_name, value)
-        
-        # Rebuild properties to show relevant fields
-        self.rebuild_properties()
-        
-        # Trigger preview update
+
+    # ==================================================================
+    # Port scene position
+    # ==================================================================
+
+    def get_port_scene_pos(self, port_name):
+        pr = self.ports.get(port_name)
+        if pr:
+            return pr.dot_scene_pos()
+        return self.scenePos()
+
+    # ==================================================================
+    # Slots
+    # ==================================================================
+
+    def _on_port_clicked(self, node_item, port_name):
+        if self.scene():
+            self.scene().handle_port_click(self, port_name)
+
+    def _on_value_changed(self, port_name, value):
+        if hasattr(self.node, port_name):
+            setattr(self.node, port_name, value)
+        # Structural combos need a port rebuild
+        if port_name in ('geometry_type', 'link_type', 'target_type', 'parameter_type'):
+            self.rebuild_ports()
         if self.scene():
             self.scene().request_preview_update()
-    
+
+    # ==================================================================
+    # Rename
+    # ==================================================================
+
+    def edit_name(self):
+        self._header_label.hide()
+        self._name_edit.setText(self.node.name)
+        self._name_edit.show()
+        self._name_edit.setFocus()
+        self._name_edit.selectAll()
+
+    def _finish_rename(self):
+        name = self._name_edit.text().strip()
+        if name:
+            self.node.name = name
+            self._header_label.setText(f"{self.node.type}  ·  {name}")
+        self._name_edit.hide()
+        self._header_label.show()
+        self.update_size()
+        if self.scene():
+            self.scene().request_preview_update()
+
+    # ==================================================================
+    # Size management — fully layout-driven
+    # ==================================================================
+
     def update_size(self):
-        """Update node size based on container widget"""
-        # Let the container calculate its size
-        self.container_widget.adjustSize()
-        
-        # Get the size hint from container
-        size = self.container_widget.sizeHint()
-        width = max(200, size.width() + 20)  # Add some padding
-        height = size.height()
-        
-        # Update rectangle
-        self.setRect(0, 0, width, height)
-        
-        # Update proxy size
-        self.proxy.setMaximumSize(width, height)
-    
-    def on_property_changed(self, prop_name, value):
-        """Handle property value change"""
-        # Update node property
-        if hasattr(self.node, prop_name):
-            setattr(self.node, prop_name, value)
-        
-        # Trigger preview update
-        if self.scene():
-            self.scene().request_preview_update()
-        
+        """Fit the QGraphicsRectItem to the widget's layout-computed size."""
+        lay = self.container_widget.layout()
+        if lay:
+            lay.activate()
+
+        msh = self.container_widget.minimumSizeHint()
+        sh  = self.container_widget.sizeHint()
+
+        w = max(msh.width(),  sh.width()  if sh.width()  > 0 else 0) + 4
+        h = max(msh.height(), sh.height() if sh.height() > 0 else 0) + 4
+
+        self.setRect(0, 0, w, h)
+        self.container_widget.setFixedSize(w, h)
+        self.proxy.setMinimumSize(w, h)
+        self.proxy.setMaximumSize(w, h)
+
+    # ==================================================================
+    # Qt overrides
+    # ==================================================================
+
     def itemChange(self, change, value):
-        """Handle item changes - update node position and arrows"""
         if change == QGraphicsRectItem.ItemPositionChange:
-            # Update node position
-            new_pos = value
-            self.node.x = new_pos.x()
-            self.node.y = new_pos.y()
-            
-            # Update connected wires
+            self.node.x = value.x()
+            self.node.y = value.y()
             if self.scene():
                 self.scene().update_port_wires(self)
-                # Trigger preview update
                 self.scene().request_preview_update()
-        
         elif change == QGraphicsRectItem.ItemPositionHasChanged:
-            # Force scene update to clear artifacts
             if self.scene():
                 self.scene().update()
-                
         elif change == QGraphicsRectItem.ItemSelectedChange:
-            # Update visual style based on selection
             self.update()
-                
         return super().itemChange(change, value)
-    
+
     def paint(self, painter, option, widget=None):
-        """Custom paint to show Dynamo-style node"""
-        # Remove the selection rectangle that Qt draws by default
         option.state &= ~QStyle.State_Selected
-        
-        # Enable antialiasing
         painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Draw shadow for depth
-        if not self.isSelected():
-            shadow_rect = self.rect().adjusted(3, 3, 3, 3)
-            painter.setBrush(QBrush(QColor(0, 0, 0, 30)))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(shadow_rect, 5, 5)
-        
-        # Draw header with rounded top corners
-        if self.isSelected():
-            painter.setBrush(self.selected_header_brush)
-            painter.setPen(self.selected_pen)
-        else:
-            painter.setBrush(self.header_brush)
-            painter.setPen(self.normal_pen)
-        
-        # Header rectangle
+
         from PySide2.QtCore import QRectF
-        header_rect = QRectF(0, 0, self.rect().width(), self.header_height)
-        painter.drawRoundedRect(header_rect, 5, 5)
-        
-        # Draw body with rounded bottom corners
-        painter.setBrush(self.body_brush)
-        if self.isSelected():
-            painter.setPen(self.selected_pen)
-        else:
-            painter.setPen(self.normal_pen)
-        
-        body_rect = QRectF(0, self.header_height, 
-                          self.rect().width(), 
-                          self.rect().height() - self.header_height)
-        painter.drawRoundedRect(body_rect, 5, 5)
-        
-        # Cover the top corners of body to connect with header
+        rect = self.rect()
+        sel  = self.isSelected()
+
+        hh = self._header_widget.sizeHint().height()
+        if hh <= 0:
+            hh = 32   # fallback before first layout pass
+
+        # Shadow
+        if not sel:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(SHADOW_COLOR))
+            painter.drawRoundedRect(rect.adjusted(3, 3, 3, 3), 6, 6)
+
+        # Header
+        painter.setPen(QPen(BORDER_SELECTED if sel else BORDER_NORMAL, 2))
+        painter.setBrush(QBrush(HEADER_BG_SELECTED if sel else HEADER_BG))
+        painter.drawRoundedRect(QRectF(0, 0, rect.width(), hh), 6, 6)
+
+        # Body
+        painter.setPen(QPen(BORDER_SELECTED if sel else BORDER_NORMAL, 2))
+        painter.setBrush(QBrush(BODY_BG))
+        painter.drawRoundedRect(
+            QRectF(0, hh, rect.width(), rect.height() - hh), 6, 6
+        )
+
+        # Seam cover (prevents the gap between header and body arcs)
         painter.setPen(Qt.NoPen)
-        cover_rect = QRectF(0, self.header_height - 5, 
-                           self.rect().width(), 10)
-        painter.drawRect(cover_rect)
-        
-        # Redraw edges for clean connection
-        if self.isSelected():
-            painter.setPen(self.selected_pen)
-        else:
-            painter.setPen(self.normal_pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawLine(int(self.rect().left()), self.header_height,
-                        int(self.rect().right()), self.header_height)
-        
-        # Draw selection highlight if selected
-        if self.isSelected():
-            # Draw a glow effect
-            glow_pen = QPen(QColor(255, 120, 0, 80), 8)
-            painter.setPen(glow_pen)
+        painter.setBrush(QBrush(BODY_BG))
+        painter.drawRect(QRectF(1, hh - 6, rect.width() - 2, 8))
+
+        # Divider
+        painter.setPen(QPen(BORDER_SELECTED if sel else BORDER_NORMAL, 1))
+        painter.drawLine(int(rect.left() + 1), hh, int(rect.right() - 1), hh)
+
+        # Selection glow
+        if sel:
+            painter.setPen(QPen(GLOW_COLOR, 8))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(self.rect().adjusted(-4, -4, 4, 4), 8, 8)
+            painter.drawRoundedRect(rect.adjusted(-4, -4, 4, 4), 8, 8)
 
     def mousePressEvent(self, event):
-        """Handle mouse press - select node"""
         super().mousePressEvent(event)
         if self.scene():
             self.scene().node_selected.emit(self.node)
-            
+
     def mouseDoubleClickEvent(self, event):
-        """Handle double click - edit name"""
-        self.edit_name(event)
+        self.edit_name()
 
     def keyPressEvent(self, event):
-        """Handle key press events"""
-        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-            # Delete this node
-            if self.scene():
-                if self.scene().delete_selected_node():
-                    event.accept()
-                    return
-        
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+            if self.scene() and self.scene().delete_selected_node():
+                event.accept()
+                return
         super().keyPressEvent(event)
