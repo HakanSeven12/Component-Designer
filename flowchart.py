@@ -5,6 +5,10 @@ Connection rules (all ports are equal — no distinction between 'flow' and 'val
   - Output port  →  Input port  on a different node = valid
   - Input  port  →  Output port = invalid (must start from output)
   - Same node connections are blocked
+
+Disconnect rule:
+  - Clicking a connected input port (when NO connection is in progress)
+    removes the existing wire immediately.
 """
 
 from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
@@ -79,6 +83,13 @@ class FlowchartScene(QGraphicsScene):
         ports = node_item.node.get_input_ports()
         return port_name in ports and not isinstance(ports[port_name], list)
 
+    def _is_port_connected(self, node_item, port_name):
+        """Return True if an input port already has a wire attached to it."""
+        return any(
+            w for w in self.port_wires
+            if w['to_item'] is node_item and w['to_port'] == port_name
+        )
+
     def can_connect(self, from_item, from_port, to_item, to_port):
         """
         A connection is valid when:
@@ -99,9 +110,17 @@ class FlowchartScene(QGraphicsScene):
         is_in  = self._is_input(node_item, port_name)
 
         if not self.connection_in_progress:
+            # ── Disconnect: clicking a connected input port removes the wire ──
+            if is_in and self._is_port_connected(node_item, port_name):
+                self._disconnect_input_port(node_item, port_name)
+                return
+
+            # ── Start a new connection from an output port ──
             if is_out:
                 self._start_connection(node_item, port_name)
+
         else:
+            # A connection is already in progress — try to finish it
             if is_in and node_item is not self.connection_start_item:
                 if self.can_connect(self.connection_start_item,
                                     self.connection_start_port,
@@ -111,6 +130,34 @@ class FlowchartScene(QGraphicsScene):
                     self._cancel_connection()
             else:
                 self._cancel_connection()
+
+    # ------------------------------------------------------------------
+    # Disconnect a single input port
+    # ------------------------------------------------------------------
+
+    def _disconnect_input_port(self, node_item, port_name):
+        """Remove the wire arriving at (node_item, port_name) and clean up."""
+        stale = [w for w in self.port_wires
+                 if w['to_item'] is node_item and w['to_port'] == port_name]
+
+        for w in stale:
+            self.removeItem(w['wire'])
+            self.port_wires.remove(w)
+
+            # Remove from the connections list
+            self.connections = [
+                c for c in self.connections
+                if not (c['to'] == node_item.node.id and c['to_port'] == port_name)
+            ]
+
+            # Clear model cross-reference
+            self._clear_node_ref(node_item.node, port_name)
+
+            # Un-grey the port editor
+            if port_name in node_item.ports:
+                node_item.ports[port_name].set_connected(False)
+
+        self.request_preview_update()
 
     # ------------------------------------------------------------------
     # Connection lifecycle

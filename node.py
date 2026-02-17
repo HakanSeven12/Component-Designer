@@ -8,6 +8,12 @@ Architecture
 - Output ports → right side (green dot)
 - No separate "properties" form area; all parameters are ports.
 - All sizes are layout-driven; no hardcoded pixel dimensions.
+
+Connection interaction
+----------------------
+- Clicking anywhere on the port row (label, editor area, dot) triggers a
+  connection. The PortDot is now a visual indicator only; the entire PortRow
+  intercepts mouse press events and emits port_clicked.
 """
 
 from PySide2.QtWidgets import (
@@ -34,22 +40,29 @@ SHADOW_COLOR       = QColor(  0,   0,   0, 30)
 GLOW_COLOR         = QColor(255, 120,   0, 80)
 DOT_RADIUS = 5   # connection dot radius in px
 
+# Highlight colors when hovering over a port row
+ROW_HOVER_INPUT  = QColor(255, 220, 180, 60)   # faint orange tint
+ROW_HOVER_OUTPUT = QColor(180, 240, 180, 60)   # faint green  tint
+
 
 # ---------------------------------------------------------------------------
-# PortDot
+# PortDot  — visual indicator only (no click handling here)
 # ---------------------------------------------------------------------------
 
 class PortDot(QWidget):
-    """Clickable circle that anchors a wire. Size from sizeHint — no fixed px."""
-
-    clicked = Signal()
+    """
+    Purely visual connection dot.
+    Click handling is delegated to the parent PortRow.
+    """
 
     def __init__(self, color: QColor, parent=None):
         super().__init__(parent)
         self._color   = color
         self._hovered = False
-        self.setCursor(Qt.PointingHandCursor)
+        # No PointingHandCursor here — the whole row handles it
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # Mouse events pass through to the parent PortRow
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def sizeHint(self):
         d = DOT_RADIUS * 2 + 6   # dot diameter + padding
@@ -57,6 +70,11 @@ class PortDot(QWidget):
 
     def minimumSizeHint(self):
         return self.sizeHint()
+
+    def set_hovered(self, hovered: bool):
+        """Called by the parent PortRow to update hover visual."""
+        self._hovered = hovered
+        self.update()
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -68,17 +86,6 @@ class PortDot(QWidget):
         cx = self.width()  // 2
         cy = self.height() // 2
         p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
-
-    def enterEvent(self, e):
-        self._hovered = True;  self.update()
-
-    def leaveEvent(self, e):
-        self._hovered = False; self.update()
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton:
-            self.clicked.emit()
-            e.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +184,8 @@ class ComboField(QWidget):
 
 class PortRow(QWidget):
     """
-    One connectable port row.
+    One connectable port row.  Clicking ANYWHERE on the row triggers the
+    port connection logic — the dot is a visual cue only.
 
     Input  layout:  [dot] [label] [editor?] ···
     Output layout:  ··· [editor?] [label] [dot]
@@ -201,16 +209,22 @@ class PortRow(QWidget):
         self.direction     = direction      # 'input' | 'output'
         self.node_item_ref = node_item_ref
         self._connected    = False
+        self._hovered      = False
 
-        color     = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
-        self._dot = PortDot(color, self)
-        self._dot.clicked.connect(self._on_dot_clicked)
+        # Determine dot color and hover tint for this row
+        self._dot_color    = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
+        self._hover_color  = ROW_HOVER_INPUT if direction == 'input' else ROW_HOVER_OUTPUT
+
+        # Visual dot (mouse events pass through it to us)
+        self._dot = PortDot(self._dot_color, self)
 
         self._label = QLabel(port_label)
         self._label.setStyleSheet(
             "QLabel { font-size: 8pt; color: #1a1a1a; background: transparent; }"
         )
         self._label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        # Label mouse events also propagate to the row
+        self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         self._editor = self._make_editor(editor_type, editor_value)
 
@@ -238,6 +252,9 @@ class PortRow(QWidget):
         self.setStyleSheet("background: transparent;")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
+        # Show a hand cursor over the whole row to hint it is clickable
+        self.setCursor(Qt.PointingHandCursor)
+
     # ------------------------------------------------------------------
     # Editor factory (float / string only)
     # ------------------------------------------------------------------
@@ -252,6 +269,7 @@ class PortRow(QWidget):
             w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             w.setStyleSheet(EDITOR_STYLE)
             w.valueChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
+            # Don't steal mouse press from the row — but DO allow normal spinbox use
             return w
 
         if etype == 'string':
@@ -293,12 +311,46 @@ class PortRow(QWidget):
         return self.node_item_ref.proxy.mapToScene(local)
 
     # ------------------------------------------------------------------
-    # Internal
+    # Mouse events — entire row is the click target
     # ------------------------------------------------------------------
 
-    def _on_dot_clicked(self):
-        if self.node_item_ref:
-            self.port_clicked.emit(self.node_item_ref, self.port_name)
+    def enterEvent(self, event):
+        """Highlight row and dot on hover."""
+        self._hovered = True
+        self._dot.set_hovered(True)
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Remove highlight when mouse leaves."""
+        self._hovered = False
+        self._dot.set_hovered(False)
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        """
+        Clicking anywhere on the row fires the port connection signal.
+        Left-click on an editor child still reaches the editor because Qt
+        delivers child-widget events to the child first; only clicks on
+        the empty / label / dot areas fall through to the row.
+        """
+        if event.button() == Qt.LeftButton:
+            if self.node_item_ref:
+                self.port_clicked.emit(self.node_item_ref, self.port_name)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        """Draw a subtle tinted background on hover."""
+        if self._hovered:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(self._hover_color))
+            p.drawRoundedRect(self.rect(), 3, 3)
+        super().paintEvent(event)
 
 
 # ---------------------------------------------------------------------------
