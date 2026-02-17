@@ -340,14 +340,14 @@ class ComponentDesigner(QMainWindow):
             # Load connections
             if 'connections' in data:
                 for conn in data['connections']:
-                    from_id = conn['from']
-                    to_id = conn['to']
-                    from_port = conn.get('from_port', 'from')
-                    to_port = conn.get('to_port', 'to')
+                    from_id   = conn['from']
+                    to_id     = conn['to']
+                    from_port = conn.get('from_port', 'vector')
+                    to_port   = conn.get('to_port', 'reference')
                     
                     if from_id in node_map and to_id in node_map:
                         from_node = node_map[from_id]
-                        to_node = node_map[to_id]
+                        to_node   = node_map[to_id]
                         self.flowchart.scene.connect_nodes_with_wire(
                             from_node, to_node, from_port, to_port
                         )

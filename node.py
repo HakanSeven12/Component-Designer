@@ -18,7 +18,7 @@ Connection interaction
 
 from PySide2.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QDoubleSpinBox, QComboBox,
+    QLabel, QLineEdit, QDoubleSpinBox, QComboBox, QCheckBox,
     QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
 )
 from PySide2.QtCore import Qt, Signal, QPointF, QSize
@@ -280,6 +280,22 @@ class PortRow(QWidget):
             w.textChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
             return w
 
+        if etype == 'bool':
+            w = QCheckBox()
+            w.setChecked(bool(value) if value is not None else False)
+            w.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            # Style the checkbox to be compact and clear
+            w.setStyleSheet(
+                "QCheckBox { spacing: 4px; font-size: 8pt; background: transparent; }"
+                "QCheckBox::indicator { width: 14px; height: 14px; }"
+                "QCheckBox::indicator:unchecked { border: 1px solid #aaa;"
+                " border-radius: 2px; background: white; }"
+                "QCheckBox::indicator:checked { border: 1px solid #4682B4;"
+                " border-radius: 2px; background: #4682B4; }"
+            )
+            w.toggled.connect(lambda v: self.value_changed.emit(self.port_name, v))
+            return w
+
         return None   # pure flow port — dot + label only
 
     # ------------------------------------------------------------------
@@ -298,6 +314,8 @@ class PortRow(QWidget):
         self._editor.setStyleSheet(style)
         if isinstance(self._editor, (QDoubleSpinBox, QLineEdit)):
             self._editor.setReadOnly(connected)
+        if isinstance(self._editor, QCheckBox):
+            self._editor.setEnabled(not connected)
 
     def dot_scene_pos(self) -> QPointF:
         """Scene-space centre of the connection dot."""
@@ -477,30 +495,33 @@ class FlowchartNodeItem(QGraphicsRectItem):
         """
         Build the body content from port declarations.
 
-        get_input_ports() / get_output_ports() → {port_name: port_type}
+        Layout structure
+        ----------------
+        ┌─────────────────────────────────────┐
+        │  [combo fields — full width]        │  (only if present)
+        ├─────────────────────────────────────┤
+        │ ┌─── inputs ──┐ │ ┌─── outputs ───┐ │
+        │ │ ● ref       │ │ │   vector ●    │ │
+        │ │ ● offset [■]│ │ │   x      ●    │ │
+        │ └─────────────┘ │ └───────────────┘ │
+        └─────────────────────────────────────┘
 
-        port_type:
-          None       → pure flow port  → PortRow (dot + label)
-          'float'    → value port      → PortRow (dot + label + spinbox)
-          'string'   → value port      → PortRow (dot + label + lineedit)
-          list[dict] → combo selector  → ComboField (label / combobox, NO dot)
-
-        Combo fields are collected first and rendered in a dedicated section
-        at the top of the body.  Connectable port rows follow, paired
-        left (input) / right (output) where possible.
+        - Input column  : left,  expands to fill available space
+        - Output column : right, sized to content (no stretch)
+        - Vertical divider separates the two columns (only when both exist)
+        - Input PortRows always expand horizontally (stretch=1 in their column)
+        - Output PortRows are right-aligned, sized to content
         """
         self.ports.clear()
 
-        inputs    = self.node.get_input_ports()   # {name: type}
-        outputs   = self.node.get_output_ports()  # {name: type}
+        inputs  = self.node.get_input_ports()
+        outputs = self.node.get_output_ports()
 
-        # Split inputs into combos vs connectable ports
-        combo_inputs = {n: t for n, t in inputs.items()  if isinstance(t, list)}
-        port_inputs  = {n: t for n, t in inputs.items()  if not isinstance(t, list)}
-        # Outputs are always connectable (list outputs not expected but guard anyway)
+        combo_inputs = {n: t for n, t in inputs.items() if isinstance(t, list)}
+        port_inputs  = {n: t for n, t in inputs.items() if not isinstance(t, list)}
         port_outputs = {n: t for n, t in outputs.items() if not isinstance(t, list)}
 
-        # ── 1. Combo fields (no dot) ──────────────────────────────────
+        # ── 1. Combo fields — full-width section at the top ───────────
         if combo_inputs:
             combo_section = QWidget()
             combo_section.setAttribute(Qt.WA_TranslucentBackground)
@@ -508,33 +529,24 @@ class FlowchartNodeItem(QGraphicsRectItem):
             cslay = QVBoxLayout()
             cslay.setContentsMargins(4, 2, 4, 4)
             cslay.setSpacing(4)
-
             for name, options in combo_inputs.items():
-                lbl   = name.replace('_', ' ').title()
-                val   = getattr(self.node, name, None)
-                cf    = ComboField(name, lbl, options, val)
+                lbl = name.replace('_', ' ').title()
+                val = getattr(self.node, name, None)
+                cf  = ComboField(name, lbl, options, val)
                 cf.value_changed.connect(self._on_value_changed)
                 cslay.addWidget(cf)
-                # Store in a separate dict so rebuild can find them
-                # (combo fields are not in self.ports — they have no dot)
-
             combo_section.setLayout(cslay)
             layout.addWidget(combo_section)
 
-            # Thin separator line between combo section and port rows
             sep = QWidget()
             sep.setFixedHeight(1)
             sep.setStyleSheet("background: #d0d0d0;")
             sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             layout.addWidget(sep)
 
-        # ── 2. Connectable port rows ──────────────────────────────────
-        in_items  = list(port_inputs.items())
-        out_items = list(port_outputs.items())
-        n = max(len(in_items), len(out_items), 1) if (in_items or out_items) else 0
-
+        # ── 2. Port columns ───────────────────────────────────────────
         def make_port_row(port_name, port_type, direction):
-            etype = port_type if port_type in ('float', 'string') else None
+            etype = port_type if port_type in ('float', 'string', 'bool') else None
             eval_ = getattr(self.node, port_name, None) if etype else None
             lbl   = port_name.replace('_', ' ').title()
             pr = PortRow(
@@ -550,48 +562,93 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.ports[port_name] = pr
             return pr
 
-        for i in range(n):
-            in_entry  = in_items[i]  if i < len(in_items)  else None
-            out_entry = out_items[i] if i < len(out_items) else None
+        has_inputs  = bool(port_inputs)
+        has_outputs = bool(port_outputs)
 
-            pair = QWidget()
-            pair.setAttribute(Qt.WA_TranslucentBackground)
-            pair.setStyleSheet("background: transparent;")
-            pair_lay = QHBoxLayout()
-            pair_lay.setContentsMargins(0, 0, 0, 0)
-            pair_lay.setSpacing(6)
+        if not has_inputs and not has_outputs:
+            return
 
-            if in_entry:
-                pair_lay.addWidget(make_port_row(in_entry[0], in_entry[1], 'input'), 1)
-            else:
-                pair_lay.addStretch(1)
+        # Outer horizontal container: [input col] | [divider] | [output col]
+        columns = QWidget()
+        columns.setAttribute(Qt.WA_TranslucentBackground)
+        columns.setStyleSheet("background: transparent;")
+        col_lay = QHBoxLayout()
+        col_lay.setContentsMargins(0, 2, 0, 2)
+        col_lay.setSpacing(0)
 
-            if out_entry:
-                pair_lay.addWidget(make_port_row(out_entry[0], out_entry[1], 'output'), 1)
-            else:
-                pair_lay.addStretch(1)
+        # ── Input column (expands to fill all available width) ────────
+        if has_inputs:
+            in_col = QWidget()
+            in_col.setAttribute(Qt.WA_TranslucentBackground)
+            in_col.setStyleSheet("background: transparent;")
+            in_lay = QVBoxLayout()
+            in_lay.setContentsMargins(0, 0, 0, 0)
+            in_lay.setSpacing(1)
+            for name, ptype in port_inputs.items():
+                pr = make_port_row(name, ptype, 'input')
+                # Each input row stretches to column width
+                pr.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+                in_lay.addWidget(pr)
+            in_lay.addStretch(1)
+            in_col.setLayout(in_lay)
+            # stretch=1 so input column takes all remaining space
+            col_lay.addWidget(in_col, 1)
 
-            pair.setLayout(pair_lay)
-            layout.addWidget(pair)
+        # ── Vertical divider (only when both columns present) ─────────
+        if has_inputs and has_outputs:
+            vdiv = QWidget()
+            vdiv.setFixedWidth(1)
+            vdiv.setStyleSheet("background: #c8c8c8;")
+            vdiv.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+            col_lay.addWidget(vdiv)
+            col_lay.addSpacing(4)
 
-        for name, ptype in in_items[n:]:
-            layout.addWidget(make_port_row(name, ptype, 'input'))
+        # ── Output column (shrinks to content) ───────────────────────
+        if has_outputs:
+            out_col = QWidget()
+            out_col.setAttribute(Qt.WA_TranslucentBackground)
+            out_col.setStyleSheet("background: transparent;")
+            out_lay = QVBoxLayout()
+            out_lay.setContentsMargins(0, 0, 0, 0)
+            out_lay.setSpacing(1)
+            for name, ptype in port_outputs.items():
+                pr = make_port_row(name, ptype, 'output')
+                pr.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+                out_lay.addWidget(pr)
+            out_lay.addStretch(1)
+            out_col.setLayout(out_lay)
+            # stretch=0 so output column is only as wide as needed
+            col_lay.addWidget(out_col, 0)
 
-        for name, ptype in out_items[n:]:
-            layout.addWidget(make_port_row(name, ptype, 'output'))
+        columns.setLayout(col_lay)
+        layout.addWidget(columns)
 
     # ==================================================================
     # Rebuild (after a combo changes the port structure)
     # ==================================================================
 
     def rebuild_ports(self):
+        """Rebuild all port widgets after a structural combo change.
+
+        Signals are blocked on the body widget during the rebuild to prevent
+        the combo's currentIndexChanged from firing again while we are
+        tearing down and recreating children.
+        """
+        self._body_widget.blockSignals(True)
+
         lay = self._body_layout
-        # Remove everything except the final stretch
+
+        widgets_to_remove = []
         while lay.count():
             item = lay.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                widgets_to_remove.append(w)
+
+        for w in widgets_to_remove:
+            w.hide()
+            w.setParent(None)
+
         self.ports.clear()
 
         self._populate_port_rows(lay)
@@ -600,6 +657,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
         for pr in self.ports.values():
             pr.set_node_item(self)
 
+        self._body_widget.blockSignals(False)
         self.update_size()
 
     # ==================================================================
@@ -623,9 +681,13 @@ class FlowchartNodeItem(QGraphicsRectItem):
     def _on_value_changed(self, port_name, value):
         if hasattr(self.node, port_name):
             setattr(self.node, port_name, value)
-        # Structural combos need a port rebuild
+        # Structural combos trigger a full port rebuild
         if port_name in ('geometry_type', 'link_type', 'target_type', 'parameter_type'):
-            self.rebuild_ports()
+            # Use a single-shot QTimer so the combo finishes its own event
+            # handling before we tear down the widget tree it lives in.
+            from PySide2.QtCore import QTimer
+            QTimer.singleShot(0, self.rebuild_ports)
+            return
         if self.scene():
             self.scene().request_preview_update()
 

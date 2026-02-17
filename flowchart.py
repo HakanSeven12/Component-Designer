@@ -247,7 +247,7 @@ class FlowchartScene(QGraphicsScene):
 
     def _set_node_ref(self, from_node, from_port, to_node, to_port):
         """Update model cross-references when a wire is created."""
-        if isinstance(to_node, PointNode) and to_port == 'to':
+        if isinstance(to_node, PointNode) and to_port == 'reference':
             to_node.from_point = from_node.id
         elif isinstance(to_node, LinkNode):
             if to_port == 'start':
@@ -257,7 +257,7 @@ class FlowchartScene(QGraphicsScene):
 
     def _clear_node_ref(self, node, port):
         """Clear model cross-reference when a wire is removed."""
-        if isinstance(node, PointNode) and port == 'to':
+        if isinstance(node, PointNode) and port == 'reference':
             node.from_point = None
         elif isinstance(node, LinkNode):
             if port == 'start':
@@ -331,7 +331,7 @@ class FlowchartScene(QGraphicsScene):
         self.preview_update_requested.emit()
 
     def connect_nodes_with_wire(self, from_node, to_node,
-                                from_port='from', to_port='to'):
+                                from_port='vector', to_port='reference'):
         """Restore a saved wire connection (used when loading from file)."""
         from_item = to_item = None
         for i in self.items():

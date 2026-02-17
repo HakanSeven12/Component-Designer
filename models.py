@@ -12,7 +12,9 @@ port_type values:
   'string'    → text editor     (QLineEdit)
   list[dict]  → combo box       ([{'label': str, 'value': any}, ...])
 
-get_inline_properties() is removed — all parameters are declared as ports.
+Geometry flow port names:
+  Output: 'vector'    — exposes this point's position
+  Input:  'reference' — receives a reference point to measure from
 """
 
 from enum import Enum
@@ -152,7 +154,7 @@ class PointNode(FlowchartNode):
         self.slope         = 0.0
         self.from_point    = None
         self.point_codes   = []
-        self.add_link_to_from = True
+        self.add_link      = True
         self.computed_x    = 0.0
         self.computed_y    = 0.0
 
@@ -163,15 +165,16 @@ class PointNode(FlowchartNode):
     def get_input_ports(self) -> dict:
         """
         Fixed ports:
-          'to'            — geometry flow in   (None)
+          'reference'     — geometry flow in   (None)
           'geometry_type' — combo selector
 
         Variable ports (depend on geometry_type):
           offset, elevation, delta_x, delta_y, slope  — float inputs
         """
         ports = {
-            'to':            None,
-            'geometry_type': _enum_options(PointGeometryType),
+            'reference':        None,
+            'geometry_type':    _enum_options(PointGeometryType),
+            'add_link':         'bool',
         }
 
         gt = self.geometry_type
@@ -198,9 +201,9 @@ class PointNode(FlowchartNode):
 
     def get_output_ports(self) -> dict:
         return {
-            'from': None, # geometry flow out
-            'x':None,     # computed X coordinate
-            'y':None,     # computed Y coordinate
+            'vector': None,  # geometry flow out — exposes this point's position
+            'x':      None,  # computed X coordinate
+            'y':      None,  # computed Y coordinate
         }
 
     # ------------------------------------------------------------------
@@ -274,6 +277,13 @@ class PointNode(FlowchartNode):
 
         items = [PreviewPointItem(x, y, self)]
 
+        # Draw a thin dashed line from reference point to this point
+        if self.add_link and self.from_point and from_pos is not None:
+            from preview import PreviewLinkLine
+            fx =  from_pos[0] * scale_factor
+            fy = -from_pos[1] * scale_factor
+            items.append(PreviewLinkLine(fx, fy, x, y, self))
+
         lbl = PreviewTextItem(self.name, self)
         f = QFont(); f.setPointSize(8); f.setBold(True)
         lbl.setFont(f)
@@ -310,7 +320,7 @@ class PointNode(FlowchartNode):
             'slope':            self.slope,
             'from_point':       self.from_point,
             'point_codes':      self.point_codes,
-            'add_link_to_from': self.add_link_to_from,
+            'add_link':         self.add_link,
         })
         return d
 
@@ -331,7 +341,7 @@ class PointNode(FlowchartNode):
         node.slope         = data.get('slope',     0.0)
         node.from_point    = data.get('from_point')
         node.point_codes   = data.get('point_codes', [])
-        node.add_link_to_from = data.get('add_link_to_from', True)
+        node.add_link = data.get('add_link', True)
         return node
 
 
@@ -517,7 +527,7 @@ class StartNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'from': None}
+        return {'vector': None}  # geometry flow out
 
     def get_flowchart_display_text(self):
         return "START"
@@ -788,25 +798,3 @@ def create_node_from_dict(data):
         node.properties = data.get('properties', {})
         return node
     return cls.from_dict(data)
-
-
-# ---------------------------------------------------------------------------
-# Legacy helpers (kept for compatibility)
-# ---------------------------------------------------------------------------
-
-class ComponentParameter:
-    def __init__(self, name, param_type, direction="Input", default_value=0.0):
-        self.name          = name
-        self.type          = param_type
-        self.direction     = direction
-        self.default_value = default_value
-        self.display_name  = name
-        self.description   = ""
-        self.current_value = default_value
-
-
-class TargetParameter:
-    def __init__(self, name, target_type):
-        self.name          = name
-        self.type          = target_type
-        self.preview_value = -1.0
