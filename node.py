@@ -548,7 +548,16 @@ class FlowchartNodeItem(QGraphicsRectItem):
         def make_port_row(port_name, port_type, direction):
             etype = port_type if port_type in ('float', 'string', 'bool') else None
             eval_ = getattr(self.node, port_name, None) if etype else None
-            lbl   = port_name.replace('_', ' ').title()
+            
+            # Special handling for codes fields: convert list to comma-separated string
+            if port_name in ('point_codes', 'link_codes') and isinstance(eval_, list):
+                eval_ = ', '.join(eval_)
+            
+            # Special label formatting for slope ports
+            if port_name == 'slope':
+                lbl = 'Slope (%)'
+            else:
+                lbl = port_name.replace('_', ' ').title()
             pr = PortRow(
                 port_name    = port_name,
                 port_label   = lbl,
@@ -680,7 +689,13 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
     def _on_value_changed(self, port_name, value):
         if hasattr(self.node, port_name):
-            setattr(self.node, port_name, value)
+            # Special handling for codes fields: convert comma-separated string to list
+            if port_name in ('point_codes', 'link_codes') and isinstance(value, str):
+                # Split by comma and strip whitespace from each code
+                codes_list = [code.strip() for code in value.split(',') if code.strip()]
+                setattr(self.node, port_name, codes_list)
+            else:
+                setattr(self.node, port_name, value)
         # Structural combos trigger a full port rebuild
         if port_name in ('geometry_type', 'link_type', 'target_type', 'parameter_type'):
             # Use a single-shot QTimer so the combo finishes its own event

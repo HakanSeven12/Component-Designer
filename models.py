@@ -15,6 +15,10 @@ port_type values:
 Geometry flow port names:
   Output: 'vector'    — exposes this point's position
   Input:  'reference' — receives a reference point to measure from
+
+Slope values:
+  Slope is stored and displayed as percentage (e.g., 2 means 2%)
+  Internally converted to ratio for calculations (2% = 0.02)
 """
 
 from enum import Enum
@@ -137,7 +141,7 @@ class PointNode(FlowchartNode):
         self.slope         = 0.0
         self.from_point    = None
         self.point_codes   = []
-        self.add_link      = True
+        self.add_link      = False
         self.computed_x    = 0.0
         self.computed_y    = 0.0
 
@@ -150,14 +154,16 @@ class PointNode(FlowchartNode):
         Fixed ports:
           'reference'     — geometry flow in   (None)
           'geometry_type' — combo selector
+          'point_codes'   — text field for point codes (comma-separated)
+          'add_link'      — boolean input
 
         Variable ports (depend on geometry_type):
           angle, delta_x, delta_y, distance, slope  — float inputs
         """
         ports = {
-            'reference':     None,
-            'geometry_type': _enum_options(PointGeometryType),
-            'add_link':      'bool',
+            'reference':        None,
+            'geometry_type':    _enum_options(PointGeometryType),
+            'add_link':         'bool',
         }
 
         gt = self.geometry_type
@@ -185,6 +191,8 @@ class PointNode(FlowchartNode):
             ports['delta_y'] = 'float'
         elif gt == PointGeometryType.SLOPE_TO_SURFACE:
             ports['slope'] = 'float'
+
+        ports['point_codes'] = 'string'
 
         return ports
 
@@ -246,14 +254,20 @@ class PointNode(FlowchartNode):
             self.computed_y = base[1]
 
         elif gt == PointGeometryType.SLOPE_DELTA_X:
+            # slope is stored as percentage (e.g., 2 means 2%)
+            # convert to decimal ratio for calculation (2% = 0.02)
+            slope_ratio = self.slope / 100.0
             self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1] + self.delta_x * self.slope
+            self.computed_y = base[1] + self.delta_x * slope_ratio
 
         elif gt == PointGeometryType.SLOPE_DELTA_Y:
-            dx = (self.delta_y / self.slope) if self.slope != 0 else 0.0
+            # slope is stored as percentage (e.g., 2 means 2%)
+            # convert to decimal ratio for calculation (2% = 0.02)
+            slope_ratio = self.slope / 100.0
+            dx = self.delta_y / slope_ratio if slope_ratio != 0 else 0.0
             self.computed_x = base[0] + dx
             self.computed_y = base[1] + self.delta_y
-
+            
         elif gt == PointGeometryType.SLOPE_TO_SURFACE:
             # TODO: requires surface target
             self.computed_x = base[0]
@@ -358,19 +372,21 @@ class LinkNode(FlowchartNode):
         self.start_point = None
         self.end_point   = None
         self.link_codes  = []
-        self.material    = "Asphalt"
-        self.thickness   = 0.0
+        self.computed_length = 0.0
+        self.computed_slope  = 0.0
 
     def get_input_ports(self) -> dict:
         return {
-            'start':     None,
-            'end':       None,
-            'link_type': _enum_options(LinkType),
-            'thickness': 'float',
+            'start':      None,  # geometry flow in - start point reference
+            'end':        None,  # geometry flow in - end point reference
+            'link_codes': 'string',  # comma-separated codes
         }
 
     def get_output_ports(self) -> dict:
-        return {}
+        return {
+            'length': None,  # computed link length
+            'slope':  None,  # computed link slope (percentage)
+        }
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -378,6 +394,19 @@ class LinkNode(FlowchartNode):
     def set_port_value(self, port_name, value):
         if hasattr(self, port_name):
             setattr(self, port_name, value)
+
+    # Compute length and slope based on start and end points
+    def compute_geometry(self, start_pos=None, end_pos=None):
+        """Calculate length and slope from start and end positions."""
+        if start_pos and end_pos:
+            dx = end_pos[0] - start_pos[0]
+            dy = end_pos[1] - start_pos[1]
+            self.computed_length = (dx**2 + dy**2) ** 0.5  # Euclidean distance
+            # Slope as percentage
+            self.computed_slope = (dy / dx * 100.0) if dx != 0 else 0.0
+        else:
+            self.computed_length = 0.0
+            self.computed_slope = 0.0
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         from PySide2.QtGui import QFont, QColor
@@ -387,6 +416,9 @@ class LinkNode(FlowchartNode):
             sp = point_positions.get(self.start_point)
             ep = point_positions.get(self.end_point)
             if sp and ep:
+                # Compute geometry based on positions
+                self.compute_geometry(sp, ep)
+                
                 x1, y1 = sp[0] * scale_factor, -sp[1] * scale_factor
                 x2, y2 = ep[0] * scale_factor, -ep[1] * scale_factor
                 items.append(PreviewLineItem(x1, y1, x2, y2, self))
@@ -411,12 +443,9 @@ class LinkNode(FlowchartNode):
     def to_dict(self):
         d = super().to_dict()
         d.update({
-            'link_type':   self.link_type.value,
             'start_point': self.start_point,
             'end_point':   self.end_point,
             'link_codes':  self.link_codes,
-            'material':    self.material,
-            'thickness':   self.thickness,
         })
         return d
 
@@ -425,13 +454,9 @@ class LinkNode(FlowchartNode):
         node = cls(data['id'], data['name'])
         node.x = data.get('x', 0)
         node.y = data.get('y', 0)
-        lt_str = data.get('link_type', 'Line')
-        node.link_type   = next((lt for lt in LinkType if lt.value == lt_str), LinkType.LINE)
         node.start_point = data.get('start_point')
         node.end_point   = data.get('end_point')
         node.link_codes  = data.get('link_codes', [])
-        node.material    = data.get('material', 'Asphalt')
-        node.thickness   = data.get('thickness', 0.0)
         return node
 
 
