@@ -3,18 +3,18 @@ Data Models for Component Designer
 
 Port declaration convention
 ---------------------------
-get_input_ports()  → dict  {port_name: port_type}
-get_output_ports() → dict  {port_name: port_type}
+get_input_ports()  -> dict  {port_name: port_type}
+get_output_ports() -> dict  {port_name: port_type}
 
 port_type values:
-  None        → pure flow port  (no editor, just a connectable dot)
-  'float'     → numeric editor  (QDoubleSpinBox)
-  'string'    → text editor     (QLineEdit)
-  list[dict]  → combo box       ([{'label': str, 'value': any}, ...])
+  None        -> pure flow port  (no editor, just a connectable dot)
+  'float'     -> numeric editor  (QDoubleSpinBox)
+  'string'    -> text editor     (QLineEdit)
+  list[dict]  -> combo box       ([{'label': str, 'value': any}, ...])
 
 Geometry flow port names:
-  Output: 'vector'    — exposes this point's position
-  Input:  'reference' — receives a reference point to measure from
+  Output: 'vector'    -- exposes this point's position
+  Input:  'reference' -- receives a reference point to measure from
 
 Slope values:
   Slope is stored and displayed as percentage (e.g., 2 means 2%)
@@ -150,20 +150,10 @@ class PointNode(FlowchartNode):
     # ------------------------------------------------------------------
 
     def get_input_ports(self) -> dict:
-        """
-        Fixed ports:
-          'reference'     — geometry flow in   (None)
-          'geometry_type' — combo selector
-          'point_codes'   — text field for point codes (comma-separated)
-          'add_link'      — boolean input
-
-        Variable ports (depend on geometry_type):
-          angle, delta_x, delta_y, distance, slope  — float inputs
-        """
         ports = {
-            'reference':        None,
-            'geometry_type':    _enum_options(PointGeometryType),
-            'add_link':         'bool',
+            'reference':     None,
+            'geometry_type': _enum_options(PointGeometryType),
+            'add_link':      'bool',
         }
 
         gt = self.geometry_type
@@ -182,7 +172,7 @@ class PointNode(FlowchartNode):
         elif gt == PointGeometryType.DELTA_X_SURFACE:
             ports['delta_x'] = 'float'
         elif gt == PointGeometryType.INTERPOLATE:
-            pass   # No numeric inputs — end point connected via wire
+            pass
         elif gt == PointGeometryType.SLOPE_DELTA_X:
             ports['slope']   = 'float'
             ports['delta_x'] = 'float'
@@ -193,14 +183,13 @@ class PointNode(FlowchartNode):
             ports['slope'] = 'float'
 
         ports['point_codes'] = 'string'
-
         return ports
 
     def get_output_ports(self) -> dict:
         return {
-            'vector': None,  # geometry flow out — exposes this point's position
-            'x':      None,  # computed X coordinate
-            'y':      None,  # computed Y coordinate
+            'vector': None,
+            'x':      None,
+            'y':      None,
         }
 
     # ------------------------------------------------------------------
@@ -224,14 +213,12 @@ class PointNode(FlowchartNode):
         base = from_point_pos or (0.0, 0.0)
 
         if gt == PointGeometryType.ANGLE_DELTA_X:
-            # Move delta_x along angle direction
             rad = math.radians(self.angle)
             self.computed_x = base[0] + self.delta_x * math.cos(rad)
             self.computed_y = base[1] + self.delta_x * math.sin(rad)
 
         elif gt == PointGeometryType.ANGLE_DELTA_Y:
             rad = math.radians(self.angle)
-            # delta_y projected along perpendicular of angle
             self.computed_x = base[0] - self.delta_y * math.sin(rad)
             self.computed_y = base[1] + self.delta_y * math.cos(rad)
 
@@ -246,30 +233,24 @@ class PointNode(FlowchartNode):
 
         elif gt == PointGeometryType.DELTA_X_SURFACE:
             self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1]  # TODO: surface elevation lookup
+            self.computed_y = base[1]
 
         elif gt == PointGeometryType.INTERPOLATE:
-            # TODO: requires two reference points
             self.computed_x = base[0]
             self.computed_y = base[1]
 
         elif gt == PointGeometryType.SLOPE_DELTA_X:
-            # slope is stored as percentage (e.g., 2 means 2%)
-            # convert to decimal ratio for calculation (2% = 0.02)
             slope_ratio = self.slope / 100.0
             self.computed_x = base[0] + self.delta_x
             self.computed_y = base[1] + self.delta_x * slope_ratio
 
         elif gt == PointGeometryType.SLOPE_DELTA_Y:
-            # slope is stored as percentage (e.g., 2 means 2%)
-            # convert to decimal ratio for calculation (2% = 0.02)
             slope_ratio = self.slope / 100.0
             dx = self.delta_y / slope_ratio if slope_ratio != 0 else 0.0
             self.computed_x = base[0] + dx
             self.computed_y = base[1] + self.delta_y
-            
+
         elif gt == PointGeometryType.SLOPE_TO_SURFACE:
-            # TODO: requires surface target
             self.computed_x = base[0]
             self.computed_y = base[1]
 
@@ -280,8 +261,10 @@ class PointNode(FlowchartNode):
     # ------------------------------------------------------------------
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
-        from PySide2.QtGui import QFont, QColor
-        from preview import PreviewPointItem, PreviewTextItem
+        from PySide2.QtCore import QPointF
+        from PySide2.QtGui import QColor
+        from preview import (PreviewPointItem, PreviewTextItem,
+                             BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
         from_pos = point_positions.get(self.from_point) if self.from_point else None
         pos = self.compute_position(from_pos)
@@ -289,28 +272,36 @@ class PointNode(FlowchartNode):
 
         x =  pos[0] * scale_factor
         y = -pos[1] * scale_factor
+        anchor = QPointF(x, y)
 
         items = [PreviewPointItem(x, y, self)]
 
-        # Draw a thin dashed line from reference point to this point
+        # Optional dashed dependency line from reference point
         if self.add_link and self.from_point and from_pos is not None:
             from preview import PreviewLinkLine
             fx =  from_pos[0] * scale_factor
             fy = -from_pos[1] * scale_factor
             items.append(PreviewLinkLine(fx, fy, x, y, self))
 
-        lbl = PreviewTextItem(self.name, self)
-        f = QFont(); f.setPointSize(8); f.setBold(True)
-        lbl.setFont(f)
-        lbl.setPos(x + 8, y - 25)
+        # Node name label — screen offset: 8px right, 25px up
+        lbl = PreviewTextItem(
+            self.name, self,
+            anchor_scene   = anchor,
+            offset_screen  = QPointF(8, -25),
+            base_font_size = BASE_FONT_NODE_LABEL,
+        )
+        f = lbl.font(); f.setBold(True); lbl.setFont(f)
         lbl.setDefaultTextColor(QColor(0, 0, 180))
         items.append(lbl)
 
+        # Code label — screen offset: 8px right, 10px up
         if show_codes and self.point_codes:
-            ct = PreviewTextItem(f"[{','.join(self.point_codes)}]", self)
-            cf = QFont(); cf.setPointSize(7)
-            ct.setFont(cf)
-            ct.setPos(x + 8, y - 10)
+            ct = PreviewTextItem(
+                f"[{','.join(self.point_codes)}]", self,
+                anchor_scene   = anchor,
+                offset_screen  = QPointF(8, -10),
+                base_font_size = BASE_FONT_CODE_LABEL,
+            )
             ct.setDefaultTextColor(QColor(0, 0, 255))
             items.append(ct)
 
@@ -368,24 +359,24 @@ class LinkNode(FlowchartNode):
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Link", name)
-        self.link_type   = LinkType.LINE
-        self.start_point = None
-        self.end_point   = None
-        self.link_codes  = []
+        self.link_type       = LinkType.LINE
+        self.start_point     = None
+        self.end_point       = None
+        self.link_codes      = []
         self.computed_length = 0.0
         self.computed_slope  = 0.0
 
     def get_input_ports(self) -> dict:
         return {
-            'start':      None,  # geometry flow in - start point reference
-            'end':        None,  # geometry flow in - end point reference
-            'link_codes': 'string',  # comma-separated codes
+            'start':      None,
+            'end':        None,
+            'link_codes': 'string',
         }
 
     def get_output_ports(self) -> dict:
         return {
-            'length': None,  # computed link length
-            'slope':  None,  # computed link slope (percentage)
+            'length': None,
+            'slope':  None,
         }
 
     def get_port_value(self, port_name):
@@ -395,43 +386,54 @@ class LinkNode(FlowchartNode):
         if hasattr(self, port_name):
             setattr(self, port_name, value)
 
-    # Compute length and slope based on start and end points
     def compute_geometry(self, start_pos=None, end_pos=None):
         """Calculate length and slope from start and end positions."""
         if start_pos and end_pos:
             dx = end_pos[0] - start_pos[0]
             dy = end_pos[1] - start_pos[1]
-            self.computed_length = (dx**2 + dy**2) ** 0.5  # Euclidean distance
-            # Slope as percentage
-            self.computed_slope = (dy / dx * 100.0) if dx != 0 else 0.0
+            self.computed_length = (dx**2 + dy**2) ** 0.5
+            self.computed_slope  = (dy / dx * 100.0) if dx != 0 else 0.0
         else:
             self.computed_length = 0.0
-            self.computed_slope = 0.0
+            self.computed_slope  = 0.0
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
-        from PySide2.QtGui import QFont, QColor
-        from preview import PreviewLineItem, PreviewTextItem
+        from PySide2.QtCore import QPointF
+        from PySide2.QtGui import QColor
+        from preview import (PreviewLineItem, PreviewTextItem,
+                             BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
         items = []
         if self.start_point and self.end_point:
             sp = point_positions.get(self.start_point)
             ep = point_positions.get(self.end_point)
             if sp and ep:
-                # Compute geometry based on positions
                 self.compute_geometry(sp, ep)
-                
+
                 x1, y1 = sp[0] * scale_factor, -sp[1] * scale_factor
                 x2, y2 = ep[0] * scale_factor, -ep[1] * scale_factor
                 items.append(PreviewLineItem(x1, y1, x2, y2, self))
+
+                # Midpoint as anchor for link labels
                 mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-                t = PreviewTextItem(self.name, self)
-                f = QFont(); f.setPointSize(8); f.setBold(True)
-                t.setFont(f); t.setPos(mx, my - 30)
+                anchor = QPointF(mx, my)
+
+                t = PreviewTextItem(
+                    self.name, self,
+                    anchor_scene   = anchor,
+                    offset_screen  = QPointF(0, -30),
+                    base_font_size = BASE_FONT_NODE_LABEL,
+                )
+                f = t.font(); f.setBold(True); t.setFont(f)
                 t.setDefaultTextColor(QColor(0, 100, 0))
                 items.append(t)
+
                 if show_codes and self.link_codes:
-                    ct = PreviewTextItem(f"[{','.join(self.link_codes)}]", self)
-                    cf = QFont(); cf.setPointSize(7)
-                    ct.setFont(cf); ct.setPos(mx, my - 15)
+                    ct = PreviewTextItem(
+                        f"[{','.join(self.link_codes)}]", self,
+                        anchor_scene   = anchor,
+                        offset_screen  = QPointF(0, -15),
+                        base_font_size = BASE_FONT_CODE_LABEL,
+                    )
                     ct.setDefaultTextColor(QColor(0, 150, 0))
                     items.append(ct)
         return items
@@ -452,8 +454,8 @@ class LinkNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0)
-        node.y = data.get('y', 0)
+        node.x           = data.get('x', 0)
+        node.y           = data.get('y', 0)
         node.start_point = data.get('start_point')
         node.end_point   = data.get('end_point')
         node.link_codes  = data.get('link_codes', [])
@@ -496,7 +498,8 @@ class ShapeNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x           = data.get('x', 0)
+        node.y           = data.get('y', 0)
         node.shape_codes = data.get('shape_codes', [])
         node.links       = data.get('links', [])
         node.material    = data.get('material', 'Asphalt')
@@ -530,12 +533,15 @@ class DecisionNode(FlowchartNode):
         return QColor(255, 200, 100)
 
     def to_dict(self):
-        d = super().to_dict(); d['condition'] = self.condition; return d
+        d = super().to_dict()
+        d['condition'] = self.condition
+        return d
 
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x         = data.get('x', 0)
+        node.y         = data.get('y', 0)
         node.condition = data.get('condition', '')
         return node
 
@@ -553,7 +559,7 @@ class StartNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'vector': None}  # geometry flow out
+        return {'vector': None}
 
     def get_flowchart_display_text(self):
         return "START"
@@ -571,7 +577,8 @@ class StartNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data.get('name', 'START'))
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
         return node
 
 
@@ -610,7 +617,8 @@ class VariableNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x             = data.get('x', 0)
+        node.y             = data.get('y', 0)
         node.variable_name = data.get('variable_name', '')
         node.expression    = data.get('expression', '')
         return node
@@ -681,7 +689,8 @@ class InputParameterNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
         pt_str = data.get('parameter_type', 'Distance')
         node.parameter_type = next(
             (pt for pt in ParameterType if pt.value == pt_str), ParameterType.DISTANCE
@@ -735,7 +744,8 @@ class OutputParameterNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
         pt_str = data.get('parameter_type', 'Distance')
         node.parameter_type = next(
             (pt for pt in ParameterType if pt.value == pt_str), ParameterType.DISTANCE
@@ -783,7 +793,8 @@ class TargetParameterNode(FlowchartNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x = data.get('x', 0); node.y = data.get('y', 0)
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
         tt_str = data.get('target_type', 'Surface')
         node.target_type = next(
             (tt for tt in TargetType if tt.value == tt_str), TargetType.SURFACE
