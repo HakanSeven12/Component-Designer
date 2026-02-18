@@ -1,53 +1,22 @@
 """
 Preview Module for Component Designer
-Handles geometry preview with Layout and Roadway modes
-
-Text scaling strategy
----------------------
-Each PreviewTextItem stores:
-  - anchor_scene : QPointF  -- the scene-space point it belongs to
-  - offset_screen: QPointF  -- fixed pixel offset from that point (screen space)
-  - base_font_size: float   -- pt size at zoom == 1.0
-
-On every zoom step, apply_scale(view_scale) is called:
-  1. font pt  = base_font_size / view_scale   (constant screen size)
-  2. pos      = anchor_scene + offset_screen / view_scale
-                (offset stays constant in screen pixels, not scene units)
-
-This keeps the label glued to its point at a fixed screen-space distance,
-and the text grows/shrinks around that anchor rather than drifting.
 """
 from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
                                QGraphicsLineItem, QGraphicsPolygonItem, QGraphicsItem,
                                QGraphicsTextItem)
 from PySide2.QtCore import Qt, QPointF
-from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPolygonF, QFont
+from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QFont
 
-from models import PointNode, LinkNode, ShapeNode
+from models import PointNode, LinkNode
 from base_graphics_view import BaseGraphicsView
 
 
-# ---------------------------------------------------------------------------
-# Base font sizes (pt) at zoom == 1.0
-# ---------------------------------------------------------------------------
 BASE_FONT_NODE_LABEL = 9
 BASE_FONT_CODE_LABEL = 7
 BASE_FONT_ORIGIN     = 8
 
 
 class PreviewTextItem(QGraphicsTextItem):
-    """
-    Selectable text label that stays anchored to a scene point at a fixed
-    screen-space offset, and maintains constant screen size across zoom levels.
-
-    Parameters
-    ----------
-    text            : label string
-    node            : owning FlowchartNode (for selection / click signals)
-    anchor_scene    : QPointF  scene-space coordinate of the owning point
-    offset_screen   : QPointF  desired offset in *screen pixels* at any zoom
-    base_font_size  : float    pt size at zoom == 1.0
-    """
 
     def __init__(self, text, node,
                  anchor_scene=None,
@@ -66,27 +35,17 @@ class PreviewTextItem(QGraphicsTextItem):
         self.normal_color   = self.defaultTextColor()
         self.selected_color = QColor(255, 120, 0)
 
-        # Set initial font
         f = QFont()
         f.setPointSizeF(base_font_size)
         self.setFont(f)
 
-        # Position at scale == 1.0
         self.setPos(self.anchor_scene + self.offset_screen)
 
     def apply_scale(self, view_scale: float):
-        """
-        Called after every zoom change.
-        Adjusts font size and position so the label appears at a constant
-        screen size, offset from its anchor point by a fixed screen distance.
-        """
-        # 1. Keep font size constant in screen pixels
         f = self.font()
         f.setPointSizeF(max(1.0, self.base_font_size / view_scale))
         self.setFont(f)
 
-        # 2. Keep offset constant in screen pixels
-        #    screen_offset / view_scale  ==  scene units needed
         scene_offset = QPointF(
             self.offset_screen.x() / view_scale,
             self.offset_screen.y() / view_scale,
@@ -108,7 +67,6 @@ class PreviewTextItem(QGraphicsTextItem):
 
 
 class PreviewPointItem(QGraphicsEllipseItem):
-    """Selectable point item in preview"""
 
     def __init__(self, x, y, node, parent=None):
         super().__init__(x - 4, y - 4, 8, 8, parent)
@@ -140,7 +98,6 @@ class PreviewPointItem(QGraphicsEllipseItem):
 
 
 class PreviewLineItem(QGraphicsLineItem):
-    """Selectable line item in preview (used by LinkNode)"""
 
     def __init__(self, x1, y1, x2, y2, node, parent=None):
         super().__init__(x1, y1, x2, y2, parent)
@@ -167,10 +124,6 @@ class PreviewLineItem(QGraphicsLineItem):
 
 
 class PreviewLinkLine(QGraphicsLineItem):
-    """
-    Thin dashed line drawn from a reference point to this point when
-    PointNode.add_link is True.
-    """
 
     def __init__(self, x1, y1, x2, y2, node, parent=None):
         super().__init__(x1, y1, x2, y2, parent)
@@ -203,7 +156,6 @@ class PreviewLinkLine(QGraphicsLineItem):
 
 
 class PreviewScene(QGraphicsScene):
-    """Custom scene for preview with selection support"""
 
     from PySide2.QtCore import Signal
     node_clicked = Signal(object)
@@ -213,7 +165,6 @@ class PreviewScene(QGraphicsScene):
 
 
 class GeometryPreview(BaseGraphicsView):
-    """Preview panel showing the component geometry"""
 
     def __init__(self):
         super().__init__()
@@ -221,27 +172,18 @@ class GeometryPreview(BaseGraphicsView):
         self.setScene(self.scene)
         self.setRenderHint(QPainter.Antialiasing)
 
-        self.scale_factor  = 20   # pixels per meter
-        self.show_codes    = True
-        self.show_comments = False
-        self.preview_mode  = "Layout"
-
-        # Cumulative zoom scale tracked manually (starts at 1.0)
+        self.scale_factor   = 20
+        self.show_codes     = True
+        self.show_comments  = False
         self._current_scale = 1.0
 
         self.points = []
         self.links  = []
-        self.shapes = []
 
         self.setup_scene()
         self.scene.node_clicked.connect(self.on_node_clicked)
 
-    # ------------------------------------------------------------------
-    # Zoom
-    # ------------------------------------------------------------------
-
     def wheelEvent(self, event):
-        """Track zoom level and rescale text items after each step."""
         zoom_factor = 1.15
 
         if event.modifiers() & Qt.ControlModifier:
@@ -273,12 +215,9 @@ class GeometryPreview(BaseGraphicsView):
         event.accept()
 
     def _rescale_text_items(self):
-        """Update font size and position of every PreviewTextItem."""
         for item in self.scene.items():
             if isinstance(item, PreviewTextItem):
                 item.apply_scale(self._current_scale)
-
-    # ------------------------------------------------------------------
 
     def on_node_clicked(self, node):
         widget = self.parentWidget()
@@ -322,7 +261,6 @@ class GeometryPreview(BaseGraphicsView):
         origin_text.setFont(f)
 
     def topological_sort_nodes(self, flowchart_nodes):
-        """Sort nodes in dependency order (dependencies before dependents)."""
         from collections import deque
 
         in_degree = {nid: 0 for nid in flowchart_nodes}
@@ -359,7 +297,6 @@ class GeometryPreview(BaseGraphicsView):
         return sorted_nodes
 
     def update_preview(self, flowchart_nodes):
-        """Rebuild the preview scene from the current flowchart nodes."""
         for item in list(self.scene.items()):
             if isinstance(item, (PreviewPointItem, PreviewLineItem,
                                  PreviewLinkLine, PreviewTextItem,
@@ -391,5 +328,4 @@ class GeometryPreview(BaseGraphicsView):
                 import traceback
                 traceback.print_exc()
 
-        # Apply current zoom to freshly added text items
         self._rescale_text_items()

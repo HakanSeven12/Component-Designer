@@ -1,36 +1,10 @@
 """
 Data Models for Component Designer
-
-Port declaration convention
----------------------------
-get_input_ports()  -> dict  {port_name: port_type}
-get_output_ports() -> dict  {port_name: port_type}
-
-port_type values:
-  None        -> pure flow port  (no editor, just a connectable dot)
-  'float'     -> numeric editor  (QDoubleSpinBox)
-  'int'       -> integer editor  (QSpinBox)
-  'string'    -> text editor     (QLineEdit)
-  'bool'      -> checkbox        (QCheckBox)
-  'percent'   -> percentage spinbox (QDoubleSpinBox, suffix="%")
-  list[dict]  -> combo box       ([{'label': str, 'value': any}, ...])
-
-Geometry flow port names:
-  Output: 'vector'    -- exposes this point's position
-  Input:  'reference' -- receives a reference point to measure from
-
-Slope values:
-  Slope is stored and displayed as percentage (e.g., 2 means 2%)
-  Internally converted to ratio for calculations (2% = 0.02)
 """
 
 from enum import Enum
 from abc import ABC, abstractmethod
 
-
-# ---------------------------------------------------------------------------
-# Enumerations
-# ---------------------------------------------------------------------------
 
 class PointGeometryType(Enum):
     ANGLE_DELTA_X    = "Angle and Delta X"
@@ -59,7 +33,6 @@ class TargetType(Enum):
 
 
 class DataType(Enum):
-    """Parameter data types (matches Subassembly Composer type list)."""
     INTEGER        = "Integer"
     DOUBLE         = "Double"
     STRING         = "String"
@@ -70,31 +43,11 @@ class DataType(Enum):
     SUPERELEVATION = "Superelevation"
 
 
-# Keep for backwards-compat with any serialized files that used ParameterType
-class ParameterType(Enum):
-    DISTANCE = "Distance"
-    SLOPE    = "Slope"
-    WIDTH    = "Width"
-    DEPTH    = "Depth"
-    ANGLE    = "Angle"
-    NUMBER   = "Number"
-
-
-# ---------------------------------------------------------------------------
-# Combo option helpers
-# ---------------------------------------------------------------------------
-
 def _enum_options(enum_cls):
-    """Return a combo-options list from an Enum class."""
     return [{'label': e.value, 'value': e} for e in enum_cls]
 
 
-# ---------------------------------------------------------------------------
-# Base class
-# ---------------------------------------------------------------------------
-
 class FlowchartNode(ABC):
-    """Base class for all flowchart nodes."""
 
     def __init__(self, node_id, node_type, name=""):
         self.id         = node_id
@@ -132,18 +85,6 @@ class FlowchartNode(ABC):
             'properties': self.properties,
         }
 
-    @classmethod
-    def from_dict(cls, data):
-        node            = cls(data['id'], data.get('name', ''))
-        node.x          = data.get('x', 0)
-        node.y          = data.get('y', 0)
-        node.properties = data.get('properties', {})
-        return node
-
-
-# ---------------------------------------------------------------------------
-# PointNode
-# ---------------------------------------------------------------------------
 
 class PointNode(FlowchartNode):
 
@@ -182,8 +123,6 @@ class PointNode(FlowchartNode):
             ports['delta_y'] = 'float'
         elif gt == PointGeometryType.DELTA_X_SURFACE:
             ports['delta_x'] = 'float'
-        elif gt == PointGeometryType.INTERPOLATE:
-            pass
         elif gt == PointGeometryType.SLOPE_DELTA_X:
             ports['slope']   = 'float'
             ports['delta_x'] = 'float'
@@ -324,10 +263,6 @@ class PointNode(FlowchartNode):
         return node
 
 
-# ---------------------------------------------------------------------------
-# LinkNode
-# ---------------------------------------------------------------------------
-
 class LinkNode(FlowchartNode):
 
     def __init__(self, node_id, name=""):
@@ -416,10 +351,6 @@ class LinkNode(FlowchartNode):
         return node
 
 
-# ---------------------------------------------------------------------------
-# ShapeNode
-# ---------------------------------------------------------------------------
-
 class ShapeNode(FlowchartNode):
 
     def __init__(self, node_id, name=""):
@@ -462,10 +393,6 @@ class ShapeNode(FlowchartNode):
         return node
 
 
-# ---------------------------------------------------------------------------
-# DecisionNode
-# ---------------------------------------------------------------------------
-
 class DecisionNode(FlowchartNode):
 
     def __init__(self, node_id, name=""):
@@ -502,17 +429,10 @@ class DecisionNode(FlowchartNode):
         return node
 
 
-# ---------------------------------------------------------------------------
-# StartNode
-# ---------------------------------------------------------------------------
-
 class StartNode(FlowchartNode):
 
     def __init__(self, node_id, name="START"):
         super().__init__(node_id, "Start", name)
-
-    def get_input_ports(self) -> dict:
-        return {}
 
     def get_output_ports(self) -> dict:
         return {'vector': None}
@@ -527,9 +447,6 @@ class StartNode(FlowchartNode):
         from PySide2.QtGui import QColor
         return QColor(100, 200, 100)
 
-    def to_dict(self):
-        return super().to_dict()
-
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data.get('name', 'START'))
@@ -537,10 +454,6 @@ class StartNode(FlowchartNode):
         node.y = data.get('y', 0)
         return node
 
-
-# ---------------------------------------------------------------------------
-# VariableNode
-# ---------------------------------------------------------------------------
 
 class VariableNode(FlowchartNode):
 
@@ -580,10 +493,6 @@ class VariableNode(FlowchartNode):
         return node
 
 
-# ---------------------------------------------------------------------------
-# GenericNode
-# ---------------------------------------------------------------------------
-
 class GenericNode(FlowchartNode):
 
     def __init__(self, node_id, node_type, name=""):
@@ -600,20 +509,7 @@ class GenericNode(FlowchartNode):
         return QColor(150, 150, 150)
 
 
-# ---------------------------------------------------------------------------
-# InputParameterNode  (type = "Input")
-# ---------------------------------------------------------------------------
-
 class InputParameterNode(FlowchartNode):
-    """
-    Defines a named input parameter for the component.
-    Node type string is "Input" — the word "Parameter" is intentionally omitted.
-
-    Ports
-    -----
-    Inputs  : data_type (combo), default_value (float editor)
-    Outputs : value
-    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Input", name)
@@ -654,27 +550,14 @@ class InputParameterNode(FlowchartNode):
         node = cls(data['id'], data['name'])
         node.x = data.get('x', 0)
         node.y = data.get('y', 0)
-        dt_str = data.get('data_type') or data.get('parameter_type', 'Double')
+        dt_str = data.get('data_type', 'Double')
         node.data_type = next(
             (dt for dt in DataType if dt.value == dt_str), DataType.DOUBLE)
         node.default_value = data.get('default_value', 0.0)
         return node
 
 
-# ---------------------------------------------------------------------------
-# OutputParameterNode  (type = "Output")
-# ---------------------------------------------------------------------------
-
 class OutputParameterNode(FlowchartNode):
-    """
-    Exposes a computed value as a named output of the component.
-    Node type string is "Output".
-
-    Ports
-    -----
-    Inputs  : value (connectable), data_type (combo)
-    Outputs : (none)
-    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Output", name)
@@ -713,21 +596,13 @@ class OutputParameterNode(FlowchartNode):
         node = cls(data['id'], data['name'])
         node.x = data.get('x', 0)
         node.y = data.get('y', 0)
-        dt_str = data.get('data_type') or data.get('parameter_type', 'Double')
+        dt_str = data.get('data_type', 'Double')
         node.data_type = next(
             (dt for dt in DataType if dt.value == dt_str), DataType.DOUBLE)
         return node
 
 
-# ---------------------------------------------------------------------------
-# TargetParameterNode  (type = "Target")
-# ---------------------------------------------------------------------------
-
 class TargetParameterNode(FlowchartNode):
-    """
-    References an external Civil 3D object.
-    Node type string is "Target".
-    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Target", name)
@@ -771,27 +646,7 @@ class TargetParameterNode(FlowchartNode):
         return node
 
 
-# ===========================================================================
-# Typed Input Nodes — one per DataType, output port only
-# ===========================================================================
-#
-# Design rules:
-#   - NO input ports
-#   - ONE output port: 'value'
-#   - Editor type matches the data type semantics:
-#       Integer        -> 'int'      (QSpinBox)
-#       Double         -> 'float'    (QDoubleSpinBox)
-#       String         -> 'string'   (QLineEdit)
-#       Grade          -> 'percent'  (QDoubleSpinBox, suffix " %")
-#       Slope          -> 'percent'  (QDoubleSpinBox, suffix " %")
-#       Yes\No         -> 'bool'     (QCheckBox)
-#       Side           -> list[dict] (Left / Right combo)
-#       Superelevation -> 'percent'  (QDoubleSpinBox, suffix " %")
-# ---------------------------------------------------------------------------
-
-
 class IntegerInputNode(FlowchartNode):
-    """Typed input node — Integer value, output only."""
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Integer Input", name)
@@ -801,7 +656,6 @@ class IntegerInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        # 'int' triggers QSpinBox in PortRow
         return {'value': 'int'}
 
     def get_port_value(self, port_name):
@@ -833,7 +687,6 @@ class IntegerInputNode(FlowchartNode):
 
 
 class DoubleInputNode(FlowchartNode):
-    """Typed input node — Double (float) value, output only."""
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Double Input", name)
@@ -874,7 +727,6 @@ class DoubleInputNode(FlowchartNode):
 
 
 class StringInputNode(FlowchartNode):
-    """Typed input node — String value, output only."""
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "String Input", name)
@@ -915,18 +767,6 @@ class StringInputNode(FlowchartNode):
 
 
 class GradeInputNode(FlowchartNode):
-    """
-    Grade input node expressed as a ratio (rise : run).
-
-    Example: 1:2  ->  rise=1, run=2  ->  percent = (1/2) * 100 = 50 %
-             2:3  ->  rise=2, run=3  ->  percent = (2/3) * 100 ~ 66.67 %
-             3:1  ->  rise=3, run=1  ->  percent = (3/1) * 100 = 300 %
-
-    Ports
-    -----
-    Inputs  : rise (float), run (float)
-    Outputs : percent — computed as (rise / run) * 100
-    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Grade Input", name)
@@ -935,18 +775,12 @@ class GradeInputNode(FlowchartNode):
 
     @property
     def percent(self) -> float:
-        """Computed grade percentage: (rise / run) * 100."""
         return (self.rise / self.run * 100.0) if self.run != 0.0 else 0.0
 
     def get_input_ports(self) -> dict:
-        return {
-            'rise': 'float',
-            'run':  'float',
-        }
+        return {'rise': 'float', 'run': 'float'}
 
     def get_output_ports(self) -> dict:
-        # 'percent' triggers QDoubleSpinBox with " %" suffix
-        # value is seeded from the computed property at node-build time
         return {'percent': 'percent'}
 
     def get_port_value(self, port_name):
@@ -955,7 +789,6 @@ class GradeInputNode(FlowchartNode):
         return getattr(self, port_name, None)
 
     def set_port_value(self, port_name, value):
-        # 'percent' output is computed; only rise/run are directly settable
         if port_name in ('rise', 'run'):
             setattr(self, port_name, float(value) if value is not None else 0.0)
 
@@ -983,7 +816,6 @@ class GradeInputNode(FlowchartNode):
 
 
 class SlopeInputNode(FlowchartNode):
-    """Typed input node — Slope (%) value, output only."""
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Slope Input", name)
@@ -1024,7 +856,6 @@ class SlopeInputNode(FlowchartNode):
 
 
 class YesNoInputNode(FlowchartNode):
-    r"""Typed input node — Yes\No (bool) value, output only."""
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Yes\\No Input", name)
@@ -1034,7 +865,6 @@ class YesNoInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        # 'bool' triggers QCheckBox in PortRow
         return {'value': 'bool'}
 
     def get_port_value(self, port_name):
@@ -1066,14 +896,6 @@ class YesNoInputNode(FlowchartNode):
 
 
 class SuperelevationInputNode(FlowchartNode):
-    """
-    Superelevation input node.
-
-    Layout
-    ------
-    Top  (input,  combo)   : lane  — selects which lane/shoulder this applies to
-    Bottom (output, percent): value — editable default percentage value (e.g. 2.5 %)
-    """
 
     _LANE_OPTIONS = [
         {'label': 'Left Inside Lane',       'value': 'Left Inside Lane'},
@@ -1088,17 +910,13 @@ class SuperelevationInputNode(FlowchartNode):
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Superelevation Input", name)
-        # Lane selection — drives the combo field at the top
         self.lane  = 'Left Inside Lane'
-        # Default superelevation percentage value — drives the percent editor
         self.value = 0.0
 
     def get_input_ports(self) -> dict:
-        # list[dict] → rendered as a full-width ComboField above the port columns
         return {'lane': self._LANE_OPTIONS}
 
     def get_output_ports(self) -> dict:
-        # 'percent' → QDoubleSpinBox with " %" suffix
         return {'value': 'percent'}
 
     def get_port_value(self, port_name):
@@ -1131,12 +949,7 @@ class SuperelevationInputNode(FlowchartNode):
         return node
 
 
-# ---------------------------------------------------------------------------
-# Registry and factories
-# ---------------------------------------------------------------------------
-
 NODE_REGISTRY = {
-    # Core nodes
     'Point':    PointNode,
     'Link':     LinkNode,
     'Shape':    ShapeNode,
@@ -1146,7 +959,6 @@ NODE_REGISTRY = {
     'Input':    InputParameterNode,
     'Output':   OutputParameterNode,
     'Target':   TargetParameterNode,
-    # Typed input nodes (one per DataType)
     'Integer Input':        IntegerInputNode,
     'Double Input':         DoubleInputNode,
     'String Input':         StringInputNode,
@@ -1154,10 +966,6 @@ NODE_REGISTRY = {
     'Slope Input':          SlopeInputNode,
     'Yes\\No Input':        YesNoInputNode,
     'Superelevation Input': SuperelevationInputNode,
-    # Legacy type strings (backwards-compat with older JSON files)
-    'Input Parameter':  InputParameterNode,
-    'Output Parameter': OutputParameterNode,
-    'Target Parameter': TargetParameterNode,
 }
 
 

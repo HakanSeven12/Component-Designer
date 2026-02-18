@@ -1,26 +1,16 @@
 """
 Flowchart Module for Component Designer
-
-Connection rules (all ports are equal — no distinction between 'flow' and 'value'):
-  - Output port  ->  Input port  on a different node = valid
-  - Input  port  ->  Output port = invalid (must start from output)
-  - Same node connections are blocked
-
-Disconnect rule:
-  - Clicking a connected input port (when NO connection is in progress)
-    removes the existing wire immediately.
 """
 
 from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
 from PySide2.QtCore import Qt, Signal, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
-from models import PointNode, LinkNode, ShapeNode, DecisionNode, FlowchartNode
+from models import PointNode, LinkNode
 from base_graphics_view import BaseGraphicsView
 from node import FlowchartNodeItem
 
 
 class ConnectionWire(QGraphicsPathItem):
-    """Bezier curve connecting two ports."""
 
     def __init__(self, start_pos, end_pos, parent=None):
         super().__init__(parent)
@@ -52,7 +42,6 @@ class ConnectionWire(QGraphicsPathItem):
 
 
 class FlowchartScene(QGraphicsScene):
-    """Custom scene for flowchart editing."""
 
     node_selected            = Signal(object)
     preview_update_requested = Signal()
@@ -68,10 +57,6 @@ class FlowchartScene(QGraphicsScene):
         self.connection_start_item  = None
         self.connection_start_port  = None
         self.temp_wire              = None
-
-    # ------------------------------------------------------------------
-    # Port direction helpers
-    # ------------------------------------------------------------------
 
     def _is_output(self, node_item, port_name):
         ports = node_item.node.get_output_ports()
@@ -91,10 +76,6 @@ class FlowchartScene(QGraphicsScene):
         if from_item is to_item:
             return False
         return self._is_output(from_item, from_port) and self._is_input(to_item, to_port)
-
-    # ------------------------------------------------------------------
-    # Port click dispatch
-    # ------------------------------------------------------------------
 
     def handle_port_click(self, node_item, port_name):
         is_out = self._is_output(node_item, port_name)
@@ -117,10 +98,6 @@ class FlowchartScene(QGraphicsScene):
             else:
                 self._cancel_connection()
 
-    # ------------------------------------------------------------------
-    # Disconnect
-    # ------------------------------------------------------------------
-
     def _disconnect_input_port(self, node_item, port_name):
         stale = [w for w in self.port_wires
                  if w['to_item'] is node_item and w['to_port'] == port_name]
@@ -135,10 +112,6 @@ class FlowchartScene(QGraphicsScene):
             if port_name in node_item.ports:
                 node_item.ports[port_name].set_connected(False)
         self.request_preview_update()
-
-    # ------------------------------------------------------------------
-    # Connection lifecycle
-    # ------------------------------------------------------------------
 
     def _start_connection(self, node_item, port_name):
         self.connection_in_progress = True
@@ -210,10 +183,6 @@ class FlowchartScene(QGraphicsScene):
         self.connection_start_item  = None
         self.connection_start_port  = None
 
-    # ------------------------------------------------------------------
-    # Node model reference helpers
-    # ------------------------------------------------------------------
-
     def _set_node_ref(self, from_node, from_port, to_node, to_port):
         if isinstance(to_node, PointNode) and to_port == 'reference':
             to_node.from_point = from_node.id
@@ -232,18 +201,10 @@ class FlowchartScene(QGraphicsScene):
             elif port == 'end':
                 node.end_point = None
 
-    # ------------------------------------------------------------------
-    # Scene events
-    # ------------------------------------------------------------------
-
     def mouseMoveEvent(self, event):
         if self.connection_in_progress and self.temp_wire:
             self.temp_wire.set_end_pos(event.scenePos())
         super().mouseMoveEvent(event)
-
-    # ------------------------------------------------------------------
-    # Node management
-    # ------------------------------------------------------------------
 
     def add_flowchart_node(self, node, x, y):
         self.nodes[node.id] = node
@@ -296,7 +257,6 @@ class FlowchartScene(QGraphicsScene):
 
     def connect_nodes_with_wire(self, from_node, to_node,
                                 from_port='vector', to_port='reference'):
-        """Restore a saved wire connection (used when loading from file)."""
         from_item = to_item = None
         for i in self.items():
             if isinstance(i, FlowchartNodeItem):
@@ -332,11 +292,6 @@ class FlowchartScene(QGraphicsScene):
             to_item.ports[to_port].set_connected(True)
 
 
-# ---------------------------------------------------------------------------
-# FlowchartView
-# ---------------------------------------------------------------------------
-
-# Typed input node type strings — kept in sync with NODE_REGISTRY keys
 _TYPED_INPUT_TYPES = (
     "Integer Input",
     "Double Input",
@@ -350,7 +305,6 @@ _TYPED_INPUT_TYPES = (
 
 
 class FlowchartView(BaseGraphicsView):
-    """Flowchart editor view."""
 
     def __init__(self):
         super().__init__()
@@ -383,10 +337,6 @@ class FlowchartView(BaseGraphicsView):
     def on_node_selected(self, node):
         self.scene.selected_node = node
 
-    # ------------------------------------------------------------------
-    # Drag-and-drop from toolbox
-    # ------------------------------------------------------------------
-
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
             event.acceptProposedAction()
@@ -403,7 +353,6 @@ class FlowchartView(BaseGraphicsView):
         etype = event.mimeData().text()
         pos   = self.mapToScene(event.pos())
 
-        # Named creators for well-known node types
         creators = {
             "Point":    self.create_point_node_at,
             "Link":     self.create_link_node_at,
@@ -418,7 +367,6 @@ class FlowchartView(BaseGraphicsView):
             fn(pos.x(), pos.y())
             event.acceptProposedAction()
         elif etype in _TYPED_INPUT_TYPES:
-            # Typed input nodes: instantiate via NODE_REGISTRY
             self.create_typed_input_node_at(etype, pos.x(), pos.y())
             event.acceptProposedAction()
         elif etype in ("Variable", "Switch", "Auxiliary Point",
@@ -428,10 +376,6 @@ class FlowchartView(BaseGraphicsView):
             event.acceptProposedAction()
         else:
             event.ignore()
-
-    # ------------------------------------------------------------------
-    # Node factories
-    # ------------------------------------------------------------------
 
     def _next_id(self):
         self.node_counter += 1
@@ -485,25 +429,17 @@ class FlowchartView(BaseGraphicsView):
         return n
 
     def create_typed_input_node_at(self, node_type, x, y):
-        """
-        Instantiate a typed input node (Integer Input, Double Input, …)
-        using the NODE_REGISTRY and add it to the scene.
-        """
         from models import create_node_from_type
-        # Derive a short prefix from the type string for the default name
         prefix = ''.join(w[0] for w in node_type.split()) + str(self.node_counter)
         n = create_node_from_type(node_type, self._next_id(), prefix)
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_generic_node_at(self, ntype, x, y):
-        n = FlowchartNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
+        from models import GenericNode
+        n = GenericNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
-
-    # ------------------------------------------------------------------
-    # Toolbar / programmatic helpers (double-click path)
-    # ------------------------------------------------------------------
 
     def add_point_node(self):
         return self.create_point_node_at(*self._auto_pos())
@@ -527,7 +463,6 @@ class FlowchartView(BaseGraphicsView):
         return self.create_target_parameter_node_at(*self._auto_pos())
 
     def add_typed_input_node(self, node_type):
-        """Programmatically add a typed input node at the next auto position."""
         return self.create_typed_input_node_at(node_type, *self._auto_pos())
 
     def get_next_node_id(self):

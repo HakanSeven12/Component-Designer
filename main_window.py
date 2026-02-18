@@ -1,6 +1,5 @@
 """
 Main Window for Component Designer
-Contains the main application window and file operations.
 """
 import json
 from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -11,13 +10,11 @@ from PySide2.QtCore import Qt
 from flowchart import FlowchartView, _TYPED_INPUT_TYPES
 from preview import GeometryPreview
 from panels import ToolboxPanel
-from models import PointNode, LinkNode, ShapeNode, DecisionNode
 from flowchart import FlowchartNodeItem
 from models import create_node_from_dict
 
 
 class ComponentDesigner(QMainWindow):
-    """Main Component Designer application"""
 
     def __init__(self):
         super().__init__()
@@ -32,10 +29,6 @@ class ComponentDesigner(QMainWindow):
         self.connect_signals()
         self.showMaximized()
 
-    # ------------------------------------------------------------------
-    # UI setup
-    # ------------------------------------------------------------------
-
     def setup_ui(self):
         central     = QWidget()
         main_layout = QHBoxLayout()
@@ -47,7 +40,6 @@ class ComponentDesigner(QMainWindow):
 
         center_splitter = QSplitter(Qt.Vertical)
 
-        # Flowchart panel
         flowchart_container = QWidget()
         flowchart_layout    = QVBoxLayout()
         flowchart_label     = QLabel("Flowchart")
@@ -59,7 +51,6 @@ class ComponentDesigner(QMainWindow):
         flowchart_layout.setContentsMargins(0, 0, 0, 0)
         flowchart_container.setLayout(flowchart_layout)
 
-        # Preview panel
         preview_container = QWidget()
         preview_layout    = QVBoxLayout()
         preview_header    = QHBoxLayout()
@@ -104,10 +95,6 @@ class ComponentDesigner(QMainWindow):
         central.setLayout(main_layout)
         self.setCentralWidget(central)
         self.statusBar().showMessage("Ready")
-
-    # ------------------------------------------------------------------
-    # Actions / menus / toolbars
-    # ------------------------------------------------------------------
 
     def create_actions(self):
         self.new_action = QAction("New", self)
@@ -166,20 +153,12 @@ class ComponentDesigner(QMainWindow):
         update_btn.triggered.connect(self.update_preview)
         toolbar.addAction(update_btn)
 
-    # ------------------------------------------------------------------
-    # Signals
-    # ------------------------------------------------------------------
-
     def connect_signals(self):
         self.toolbox.element_selected.connect(self.add_element_to_flowchart)
         self.show_codes_check.stateChanged.connect(self.toggle_codes)
         self.show_comments_check.stateChanged.connect(self.toggle_comments)
         self.flowchart.scene.node_selected.connect(self.on_flowchart_node_selected)
         self.flowchart.scene.preview_update_requested.connect(self.update_preview)
-
-    # ------------------------------------------------------------------
-    # Node selection sync
-    # ------------------------------------------------------------------
 
     def on_flowchart_node_selected(self, node):
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
@@ -189,12 +168,7 @@ class ComponentDesigner(QMainWindow):
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
         self.flowchart.select_node_visually(node)
 
-    # ------------------------------------------------------------------
-    # Add element (double-click path from toolbox)
-    # ------------------------------------------------------------------
-
     def add_element_to_flowchart(self, element_type: str):
-        """Add a node at the next auto position (double-click from toolbox)."""
         creators = {
             "Point":    self.flowchart.add_point_node,
             "Link":     self.flowchart.add_link_node,
@@ -207,19 +181,13 @@ class ComponentDesigner(QMainWindow):
         if fn:
             fn()
         elif element_type in _TYPED_INPUT_TYPES:
-            # Typed input nodes routed through the registry-aware helper
             self.flowchart.add_typed_input_node(element_type)
         else:
-            # Generic fallback for Variable, Switch, Auxiliary*, etc.
             x, y = self.flowchart._auto_pos()
             self.flowchart.create_generic_node_at(element_type, x, y)
 
         self.modified = True
         self.update_preview()
-
-    # ------------------------------------------------------------------
-    # Preview
-    # ------------------------------------------------------------------
 
     def update_preview(self):
         self.preview.update_preview(self.flowchart.scene.nodes)
@@ -231,10 +199,6 @@ class ComponentDesigner(QMainWindow):
     def toggle_comments(self, state):
         self.preview.show_comments = (state == Qt.Checked)
         self.update_preview()
-
-    # ------------------------------------------------------------------
-    # File operations
-    # ------------------------------------------------------------------
 
     def new_file(self):
         if self.check_save_changes():
@@ -348,7 +312,7 @@ class ComponentDesigner(QMainWindow):
         return True
 
     def restore_default_layout(self):
-        pass  # TODO
+        pass
 
     def show_about(self):
         QMessageBox.about(

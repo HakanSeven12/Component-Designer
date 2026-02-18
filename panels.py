@@ -1,6 +1,5 @@
 """
-UI Panels for Component Designer
-Contains the Toolbox panel with drag-and-drop support.
+Toolbox Panel for Component Designer
 """
 from PySide2.QtWidgets import (QWidget, QVBoxLayout, QApplication,
                                QTreeWidget, QTreeWidgetItem)
@@ -9,7 +8,6 @@ from PySide2.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
 
 class DraggableTreeWidget(QTreeWidget):
-    """Tree widget that supports dragging child items into the flowchart."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -31,7 +29,6 @@ class DraggableTreeWidget(QTreeWidget):
             return
 
         item = self.itemAt(self._drag_start_pos)
-        # Only leaf nodes (children) are draggable
         if item is None or item.childCount() > 0:
             return
 
@@ -56,7 +53,6 @@ class DraggableTreeWidget(QTreeWidget):
 
 
 class ToolboxPanel(QWidget):
-    """Toolbox panel — drag items into the flowchart or double-click to add."""
 
     element_selected = Signal(str)
 
@@ -72,7 +68,6 @@ class ToolboxPanel(QWidget):
         self.tree.setHeaderLabel("Toolbox")
         self.tree.setIndentation(16)
 
-        # ── Parameters ────────────────────────────────────────────────
         params = QTreeWidgetItem(["Parameters"])
         params.setFlags(params.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Output", "Target"):
@@ -81,7 +76,6 @@ class ToolboxPanel(QWidget):
             params.addChild(child)
         self.tree.addTopLevelItem(params)
 
-        # ── Typed Inputs — one per DataType ───────────────────────────
         typed = QTreeWidgetItem(["Typed Inputs"])
         typed.setFlags(typed.flags() & ~Qt.ItemIsDragEnabled)
         for label in (
@@ -98,7 +92,6 @@ class ToolboxPanel(QWidget):
             typed.addChild(child)
         self.tree.addTopLevelItem(typed)
 
-        # ── Geometry ──────────────────────────────────────────────────
         geometry = QTreeWidgetItem(["Geometry"])
         geometry.setFlags(geometry.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Point", "Link", "Shape"):
@@ -107,7 +100,6 @@ class ToolboxPanel(QWidget):
             geometry.addChild(child)
         self.tree.addTopLevelItem(geometry)
 
-        # ── Auxiliary ─────────────────────────────────────────────────
         auxiliary = QTreeWidgetItem(["Auxiliary"])
         auxiliary.setFlags(auxiliary.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Auxiliary Point", "Auxiliary Line", "Auxiliary Curve"):
@@ -116,7 +108,6 @@ class ToolboxPanel(QWidget):
             auxiliary.addChild(child)
         self.tree.addTopLevelItem(auxiliary)
 
-        # ── Workflow ──────────────────────────────────────────────────
         workflow = QTreeWidgetItem(["Workflow"])
         workflow.setFlags(workflow.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Decision", "Switch", "Variable"):
@@ -132,6 +123,5 @@ class ToolboxPanel(QWidget):
         self.setLayout(layout)
 
     def _on_double_click(self, item, _column):
-        """Double-clicking a leaf node emits element_selected."""
-        if item.childCount() == 0:  # leaf only
+        if item.childCount() == 0:
             self.element_selected.emit(item.text(0))
