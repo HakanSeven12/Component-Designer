@@ -8,7 +8,7 @@ from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QFileDialog, QMessageBox, QComboBox, QCheckBox)
 from PySide2.QtCore import Qt
 
-from flowchart import FlowchartView
+from flowchart import FlowchartView, _TYPED_INPUT_TYPES
 from preview import GeometryPreview
 from panels import ToolboxPanel
 from models import PointNode, LinkNode, ShapeNode, DecisionNode
@@ -196,17 +196,19 @@ class ComponentDesigner(QMainWindow):
     def add_element_to_flowchart(self, element_type: str):
         """Add a node at the next auto position (double-click from toolbox)."""
         creators = {
-            "Point":            self.flowchart.add_point_node,
-            "Link":             self.flowchart.add_link_node,
-            "Shape":            self.flowchart.add_shape_node,
-            "Decision":         self.flowchart.add_decision_node,
-            "Input":  self.flowchart.add_input_parameter_node,
-            "Output": self.flowchart.add_output_parameter_node,
-            "Target": self.flowchart.add_target_parameter_node,
+            "Point":    self.flowchart.add_point_node,
+            "Link":     self.flowchart.add_link_node,
+            "Shape":    self.flowchart.add_shape_node,
+            "Decision": self.flowchart.add_decision_node,
+            "Output":   self.flowchart.add_output_parameter_node,
+            "Target":   self.flowchart.add_target_parameter_node,
         }
         fn = creators.get(element_type)
         if fn:
             fn()
+        elif element_type in _TYPED_INPUT_TYPES:
+            # Typed input nodes routed through the registry-aware helper
+            self.flowchart.add_typed_input_node(element_type)
         else:
             # Generic fallback for Variable, Switch, Auxiliary*, etc.
             x, y = self.flowchart._auto_pos()

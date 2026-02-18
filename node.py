@@ -14,11 +14,20 @@ Connection interaction
 - Clicking anywhere on the port row (label, editor area, dot) triggers a
   connection. The PortDot is now a visual indicator only; the entire PortRow
   intercepts mouse press events and emits port_clicked.
+
+Editor types supported in PortRow._make_editor
+-----------------------------------------------
+  None      -> pure flow port (dot + label only)
+  'float'   -> QDoubleSpinBox  (range ±1e6, 4 decimals)
+  'int'     -> QSpinBox        (range ±1 000 000)
+  'string'  -> QLineEdit
+  'bool'    -> QCheckBox
+  'percent' -> QDoubleSpinBox  (range ±1e6, 4 decimals, suffix " %")
 """
 
 from PySide2.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QDoubleSpinBox, QComboBox, QCheckBox,
+    QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
     QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
 )
 from PySide2.QtCore import Qt, Signal, QPointF, QSize
@@ -86,11 +95,11 @@ class PortDot(QWidget):
 # ---------------------------------------------------------------------------
 
 EDITOR_STYLE = """
-    QDoubleSpinBox, QLineEdit, QComboBox {
+    QDoubleSpinBox, QSpinBox, QLineEdit, QComboBox {
         background: white; border: 1px solid #c0c0c0;
         border-radius: 3px; padding: 1px 4px; font-size: 8pt;
     }
-    QDoubleSpinBox:focus, QLineEdit:focus, QComboBox:focus {
+    QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus, QComboBox:focus {
         border: 2px solid #4682B4;
     }
     QComboBox::drop-down { border: none; width: 18px; }
@@ -174,10 +183,12 @@ class PortRow(QWidget):
     port connection logic.
 
     editor_type:
-      None     -> pure flow port (dot + label, no editor)
-      'float'  -> QDoubleSpinBox
-      'string' -> QLineEdit
-      'bool'   -> QCheckBox
+      None      -> pure flow port (dot + label, no editor)
+      'float'   -> QDoubleSpinBox  (±1e6, 4 decimals)
+      'int'     -> QSpinBox        (±1 000 000)
+      'string'  -> QLineEdit
+      'bool'    -> QCheckBox
+      'percent' -> QDoubleSpinBox with " %" suffix (±1e6, 4 decimals)
     """
 
     port_clicked  = Signal(object, str)
@@ -233,12 +244,45 @@ class PortRow(QWidget):
         self.setCursor(Qt.PointingHandCursor)
 
     def _make_editor(self, etype, value):
+        """
+        Build the inline value editor for this port.
+
+        Supported types
+        ---------------
+        'float'   -> QDoubleSpinBox  (range ±1e6, 4 decimals)
+        'int'     -> QSpinBox        (range ±1 000 000, integer only)
+        'string'  -> QLineEdit
+        'bool'    -> QCheckBox
+        'percent' -> QDoubleSpinBox  (range ±1e6, 4 decimals, suffix " %")
+        """
         if etype == 'float':
             w = QDoubleSpinBox()
             w.setRange(-1e6, 1e6)
             w.setDecimals(4)
             w.setValue(float(value) if value is not None else 0.0)
             w.setMinimumWidth(75)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            w.setStyleSheet(EDITOR_STYLE)
+            w.valueChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
+            return w
+
+        if etype == 'int':
+            w = QSpinBox()
+            w.setRange(-1_000_000, 1_000_000)
+            w.setValue(int(value) if value is not None else 0)
+            w.setMinimumWidth(75)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            w.setStyleSheet(EDITOR_STYLE)
+            w.valueChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
+            return w
+
+        if etype == 'percent':
+            w = QDoubleSpinBox()
+            w.setRange(-1e6, 1e6)
+            w.setDecimals(4)
+            w.setSuffix(" %")
+            w.setValue(float(value) if value is not None else 0.0)
+            w.setMinimumWidth(85)
             w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             w.setStyleSheet(EDITOR_STYLE)
             w.valueChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
@@ -278,7 +322,7 @@ class PortRow(QWidget):
             return
         style = EDITOR_STYLE_DISABLED if connected else EDITOR_STYLE
         self._editor.setStyleSheet(style)
-        if isinstance(self._editor, (QDoubleSpinBox, QLineEdit)):
+        if isinstance(self._editor, (QDoubleSpinBox, QSpinBox, QLineEdit)):
             self._editor.setReadOnly(connected)
         if isinstance(self._editor, QCheckBox):
             self._editor.setEnabled(not connected)
@@ -434,25 +478,31 @@ class FlowchartNodeItem(QGraphicsRectItem):
         Layout structure:
           [combo fields — full width at top]
           [input column] | [divider] | [output column]
+
+        Editor types recognised in port declarations:
+          None / 'float' / 'int' / 'string' / 'bool' / 'percent' / list[dict]
         """
         self.ports.clear()
 
         inputs  = self.node.get_input_ports()
         outputs = self.node.get_output_ports()
 
-        combo_inputs = {n: t for n, t in inputs.items()  if isinstance(t, list)}
-        port_inputs  = {n: t for n, t in inputs.items()  if not isinstance(t, list)}
-        port_outputs = {n: t for n, t in outputs.items() if not isinstance(t, list)}
+        # Combo fields are list[dict] on either side
+        combo_inputs  = {n: t for n, t in inputs.items()  if isinstance(t, list)}
+        combo_outputs = {n: t for n, t in outputs.items() if isinstance(t, list)}
+        port_inputs   = {n: t for n, t in inputs.items()  if not isinstance(t, list)}
+        port_outputs  = {n: t for n, t in outputs.items() if not isinstance(t, list)}
 
-        # ── 1. Combo fields (full-width) ──────────────────────────────
-        if combo_inputs:
+        # ── 1. Combo fields (full-width at top) ───────────────────────
+        all_combos = list(combo_inputs.items()) + list(combo_outputs.items())
+        if all_combos:
             combo_section = QWidget()
             combo_section.setAttribute(Qt.WA_TranslucentBackground)
             combo_section.setStyleSheet("background: transparent;")
             cslay = QVBoxLayout()
             cslay.setContentsMargins(4, 2, 4, 4)
             cslay.setSpacing(4)
-            for name, options in combo_inputs.items():
+            for name, options in all_combos:
                 lbl = name.replace('_', ' ').title()
                 val = getattr(self.node, name, None)
                 cf  = ComboField(name, lbl, options, val)
@@ -469,8 +519,17 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         # ── 2. Port columns ───────────────────────────────────────────
         def make_port_row(port_name, port_type, direction):
-            etype = port_type if port_type in ('float', 'string', 'bool') else None
-            eval_ = getattr(self.node, port_name, None) if etype else None
+            # Scalar editor types
+            etype = port_type if port_type in ('float', 'int', 'string', 'bool', 'percent') else None
+
+            # For computed output ports, seed editor value from get_port_value()
+            # so it reflects the current calculation (e.g. GradeInputNode.percent)
+            if etype and hasattr(self.node, 'get_port_value'):
+                eval_ = self.node.get_port_value(port_name)
+            elif etype:
+                eval_ = getattr(self.node, port_name, None)
+            else:
+                eval_ = None
 
             if port_name in ('point_codes', 'link_codes') and isinstance(eval_, list):
                 eval_ = ', '.join(eval_)
@@ -491,6 +550,12 @@ class FlowchartNodeItem(QGraphicsRectItem):
             pr.value_changed.connect(self._on_value_changed)
             pr.port_clicked.connect(self._on_port_clicked)
             self.ports[port_name] = pr
+
+            # Computed output ports (e.g. GradeInputNode.percent) are read-only:
+            # their value is driven by other inputs, not entered directly.
+            if direction == 'output' and not hasattr(self.node, port_name):
+                pr.set_connected(True)  # grey out and lock the editor
+
             return pr
 
         has_inputs  = bool(port_inputs)
@@ -600,6 +665,14 @@ class FlowchartNodeItem(QGraphicsRectItem):
                 setattr(self.node, port_name, codes_list)
             else:
                 setattr(self.node, port_name, value)
+
+        # GradeInputNode: when rise or run changes, refresh the percent output spinbox
+        if port_name in ('rise', 'run') and hasattr(self.node, 'percent'):
+            percent_row = self.ports.get('percent')
+            if percent_row and percent_row._editor is not None:
+                percent_row._editor.blockSignals(True)
+                percent_row._editor.setValue(self.node.percent)
+                percent_row._editor.blockSignals(False)
 
         # Structural combos that require a full port rebuild
         structural_ports = (

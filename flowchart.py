@@ -336,6 +336,19 @@ class FlowchartScene(QGraphicsScene):
 # FlowchartView
 # ---------------------------------------------------------------------------
 
+# Typed input node type strings — kept in sync with NODE_REGISTRY keys
+_TYPED_INPUT_TYPES = (
+    "Integer Input",
+    "Double Input",
+    "String Input",
+    "Grade Input",
+    "Slope Input",
+    "Yes\\No Input",
+    "Side Input",
+    "Superelevation Input",
+)
+
+
 class FlowchartView(BaseGraphicsView):
     """Flowchart editor view."""
 
@@ -390,18 +403,23 @@ class FlowchartView(BaseGraphicsView):
         etype = event.mimeData().text()
         pos   = self.mapToScene(event.pos())
 
+        # Named creators for well-known node types
         creators = {
-            "Point":            self.create_point_node_at,
-            "Link":             self.create_link_node_at,
-            "Shape":            self.create_shape_node_at,
-            "Decision":         self.create_decision_node_at,
-            "Input":  self.create_input_parameter_node_at,
-            "Output": self.create_output_parameter_node_at,
-            "Target": self.create_target_parameter_node_at,
+            "Point":    self.create_point_node_at,
+            "Link":     self.create_link_node_at,
+            "Shape":    self.create_shape_node_at,
+            "Decision": self.create_decision_node_at,
+            "Input":    self.create_input_parameter_node_at,
+            "Output":   self.create_output_parameter_node_at,
+            "Target":   self.create_target_parameter_node_at,
         }
         fn = creators.get(etype)
         if fn:
             fn(pos.x(), pos.y())
+            event.acceptProposedAction()
+        elif etype in _TYPED_INPUT_TYPES:
+            # Typed input nodes: instantiate via NODE_REGISTRY
+            self.create_typed_input_node_at(etype, pos.x(), pos.y())
             event.acceptProposedAction()
         elif etype in ("Variable", "Switch", "Auxiliary Point",
                        "Auxiliary Line", "Auxiliary Curve",
@@ -466,6 +484,18 @@ class FlowchartView(BaseGraphicsView):
         self.scene.add_flowchart_node(n, x, y)
         return n
 
+    def create_typed_input_node_at(self, node_type, x, y):
+        """
+        Instantiate a typed input node (Integer Input, Double Input, …)
+        using the NODE_REGISTRY and add it to the scene.
+        """
+        from models import create_node_from_type
+        # Derive a short prefix from the type string for the default name
+        prefix = ''.join(w[0] for w in node_type.split()) + str(self.node_counter)
+        n = create_node_from_type(node_type, self._next_id(), prefix)
+        self.scene.add_flowchart_node(n, x, y)
+        return n
+
     def create_generic_node_at(self, ntype, x, y):
         n = FlowchartNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
@@ -495,6 +525,10 @@ class FlowchartView(BaseGraphicsView):
 
     def add_target_parameter_node(self):
         return self.create_target_parameter_node_at(*self._auto_pos())
+
+    def add_typed_input_node(self, node_type):
+        """Programmatically add a typed input node at the next auto position."""
+        return self.create_typed_input_node_at(node_type, *self._auto_pos())
 
     def get_next_node_id(self):
         return self._next_id()

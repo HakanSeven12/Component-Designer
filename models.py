@@ -9,7 +9,10 @@ get_output_ports() -> dict  {port_name: port_type}
 port_type values:
   None        -> pure flow port  (no editor, just a connectable dot)
   'float'     -> numeric editor  (QDoubleSpinBox)
+  'int'       -> integer editor  (QSpinBox)
   'string'    -> text editor     (QLineEdit)
+  'bool'      -> checkbox        (QCheckBox)
+  'percent'   -> percentage spinbox (QDoubleSpinBox, suffix="%")
   list[dict]  -> combo box       ([{'label': str, 'value': any}, ...])
 
 Geometry flow port names:
@@ -768,12 +771,372 @@ class TargetParameterNode(FlowchartNode):
         return node
 
 
+# ===========================================================================
+# Typed Input Nodes — one per DataType, output port only
+# ===========================================================================
+#
+# Design rules:
+#   - NO input ports
+#   - ONE output port: 'value'
+#   - Editor type matches the data type semantics:
+#       Integer        -> 'int'      (QSpinBox)
+#       Double         -> 'float'    (QDoubleSpinBox)
+#       String         -> 'string'   (QLineEdit)
+#       Grade          -> 'percent'  (QDoubleSpinBox, suffix " %")
+#       Slope          -> 'percent'  (QDoubleSpinBox, suffix " %")
+#       Yes\No         -> 'bool'     (QCheckBox)
+#       Side           -> list[dict] (Left / Right combo)
+#       Superelevation -> 'percent'  (QDoubleSpinBox, suffix " %")
+# ---------------------------------------------------------------------------
+
+
+class IntegerInputNode(FlowchartNode):
+    """Typed input node — Integer value, output only."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Integer Input", name)
+        self.value = 0
+
+    def get_input_ports(self) -> dict:
+        return {}
+
+    def get_output_ports(self) -> dict:
+        # 'int' triggers QSpinBox in PortRow
+        return {'value': 'int'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(130, 160, 255)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['value'] = self.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x     = data.get('x', 0)
+        node.y     = data.get('y', 0)
+        node.value = data.get('value', 0)
+        return node
+
+
+class DoubleInputNode(FlowchartNode):
+    """Typed input node — Double (float) value, output only."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Double Input", name)
+        self.value = 0.0
+
+    def get_input_ports(self) -> dict:
+        return {}
+
+    def get_output_ports(self) -> dict:
+        return {'value': 'float'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(100, 150, 255)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['value'] = self.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x     = data.get('x', 0)
+        node.y     = data.get('y', 0)
+        node.value = data.get('value', 0.0)
+        return node
+
+
+class StringInputNode(FlowchartNode):
+    """Typed input node — String value, output only."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "String Input", name)
+        self.value = ""
+
+    def get_input_ports(self) -> dict:
+        return {}
+
+    def get_output_ports(self) -> dict:
+        return {'value': 'string'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(160, 200, 255)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['value'] = self.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x     = data.get('x', 0)
+        node.y     = data.get('y', 0)
+        node.value = data.get('value', '')
+        return node
+
+
+class GradeInputNode(FlowchartNode):
+    """
+    Grade input node expressed as a ratio (rise : run).
+
+    Example: 1:2  ->  rise=1, run=2  ->  percent = (1/2) * 100 = 50 %
+             2:3  ->  rise=2, run=3  ->  percent = (2/3) * 100 ~ 66.67 %
+             3:1  ->  rise=3, run=1  ->  percent = (3/1) * 100 = 300 %
+
+    Ports
+    -----
+    Inputs  : rise (float), run (float)
+    Outputs : percent — computed as (rise / run) * 100
+    """
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Grade Input", name)
+        self.rise = 1.0
+        self.run  = 2.0
+
+    @property
+    def percent(self) -> float:
+        """Computed grade percentage: (rise / run) * 100."""
+        return (self.rise / self.run * 100.0) if self.run != 0.0 else 0.0
+
+    def get_input_ports(self) -> dict:
+        return {
+            'rise': 'float',
+            'run':  'float',
+        }
+
+    def get_output_ports(self) -> dict:
+        # 'percent' triggers QDoubleSpinBox with " %" suffix
+        # value is seeded from the computed property at node-build time
+        return {'percent': 'percent'}
+
+    def get_port_value(self, port_name):
+        if port_name == 'percent':
+            return self.percent
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        # 'percent' output is computed; only rise/run are directly settable
+        if port_name in ('rise', 'run'):
+            setattr(self, port_name, float(value) if value is not None else 0.0)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(100, 210, 180)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['rise'] = self.rise
+        d['run']  = self.run
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x    = data.get('x', 0)
+        node.y    = data.get('y', 0)
+        node.rise = data.get('rise', 1.0)
+        node.run  = data.get('run',  2.0)
+        return node
+
+
+class SlopeInputNode(FlowchartNode):
+    """Typed input node — Slope (%) value, output only."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Slope Input", name)
+        self.value = 0.0
+
+    def get_input_ports(self) -> dict:
+        return {}
+
+    def get_output_ports(self) -> dict:
+        return {'value': 'percent'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(80, 190, 160)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['value'] = self.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x     = data.get('x', 0)
+        node.y     = data.get('y', 0)
+        node.value = data.get('value', 0.0)
+        return node
+
+
+class YesNoInputNode(FlowchartNode):
+    r"""Typed input node — Yes\No (bool) value, output only."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Yes\\No Input", name)
+        self.value = False
+
+    def get_input_ports(self) -> dict:
+        return {}
+
+    def get_output_ports(self) -> dict:
+        # 'bool' triggers QCheckBox in PortRow
+        return {'value': 'bool'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(255, 210, 120)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['value'] = self.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x     = data.get('x', 0)
+        node.y     = data.get('y', 0)
+        node.value = data.get('value', False)
+        return node
+
+
+class SuperelevationInputNode(FlowchartNode):
+    """
+    Superelevation input node.
+
+    Layout
+    ------
+    Top  (input,  combo)   : lane  — selects which lane/shoulder this applies to
+    Bottom (output, percent): value — editable default percentage value (e.g. 2.5 %)
+    """
+
+    _LANE_OPTIONS = [
+        {'label': 'Left Inside Lane',       'value': 'Left Inside Lane'},
+        {'label': 'Left Outside Lane',      'value': 'Left Outside Lane'},
+        {'label': 'Right Inside Lane',      'value': 'Right Inside Lane'},
+        {'label': 'Right Outside Lane',     'value': 'Right Outside Lane'},
+        {'label': 'Left Inside Shoulder',   'value': 'Left Inside Shoulder'},
+        {'label': 'Left Outside Shoulder',  'value': 'Left Outside Shoulder'},
+        {'label': 'Right Inside Shoulder',  'value': 'Right Inside Shoulder'},
+        {'label': 'Right Outside Shoulder', 'value': 'Right Outside Shoulder'},
+    ]
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Superelevation Input", name)
+        # Lane selection — drives the combo field at the top
+        self.lane  = 'Left Inside Lane'
+        # Default superelevation percentage value — drives the percent editor
+        self.value = 0.0
+
+    def get_input_ports(self) -> dict:
+        # list[dict] → rendered as a full-width ComboField above the port columns
+        return {'lane': self._LANE_OPTIONS}
+
+    def get_output_ports(self) -> dict:
+        # 'percent' → QDoubleSpinBox with " %" suffix
+        return {'value': 'percent'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        from PySide2.QtGui import QColor
+        return QColor(180, 130, 255)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['lane']  = self.lane
+        d['value'] = self.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['id'], data.get('name', ''))
+        node.x     = data.get('x', 0)
+        node.y     = data.get('y', 0)
+        node.lane  = data.get('lane',  'Left Inside Lane')
+        node.value = data.get('value', 0.0)
+        return node
+
+
 # ---------------------------------------------------------------------------
 # Registry and factories
 # ---------------------------------------------------------------------------
 
 NODE_REGISTRY = {
-    # Current type strings
+    # Core nodes
     'Point':    PointNode,
     'Link':     LinkNode,
     'Shape':    ShapeNode,
@@ -783,6 +1146,14 @@ NODE_REGISTRY = {
     'Input':    InputParameterNode,
     'Output':   OutputParameterNode,
     'Target':   TargetParameterNode,
+    # Typed input nodes (one per DataType)
+    'Integer Input':        IntegerInputNode,
+    'Double Input':         DoubleInputNode,
+    'String Input':         StringInputNode,
+    'Grade Input':          GradeInputNode,
+    'Slope Input':          SlopeInputNode,
+    'Yes\\No Input':        YesNoInputNode,
+    'Superelevation Input': SuperelevationInputNode,
     # Legacy type strings (backwards-compat with older JSON files)
     'Input Parameter':  InputParameterNode,
     'Output Parameter': OutputParameterNode,

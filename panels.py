@@ -40,11 +40,11 @@ class DraggableTreeWidget(QTreeWidget):
         mime = QMimeData()
         mime.setText(element_type)
 
-        pixmap = QPixmap(120, 36)
+        pixmap = QPixmap(140, 36)
         pixmap.fill(QColor(200, 220, 255, 220))
         painter = QPainter(pixmap)
         painter.setPen(QPen(QColor(80, 80, 160), 1))
-        painter.drawRect(0, 0, 119, 35)
+        painter.drawRect(0, 0, 139, 35)
         painter.drawText(pixmap.rect(), Qt.AlignCenter, element_type)
         painter.end()
 
@@ -75,11 +75,28 @@ class ToolboxPanel(QWidget):
         # ── Parameters ────────────────────────────────────────────────
         params = QTreeWidgetItem(["Parameters"])
         params.setFlags(params.flags() & ~Qt.ItemIsDragEnabled)
-        for label in ("Input", "Output", "Target"):
+        for label in ("Output", "Target"):
             child = QTreeWidgetItem([label])
             child.setFlags(child.flags() | Qt.ItemIsDragEnabled)
             params.addChild(child)
         self.tree.addTopLevelItem(params)
+
+        # ── Typed Inputs — one per DataType ───────────────────────────
+        typed = QTreeWidgetItem(["Typed Inputs"])
+        typed.setFlags(typed.flags() & ~Qt.ItemIsDragEnabled)
+        for label in (
+            "Integer Input",
+            "Double Input",
+            "String Input",
+            "Grade Input",
+            "Slope Input",
+            "Yes\\No Input",
+            "Superelevation Input",
+        ):
+            child = QTreeWidgetItem([label])
+            child.setFlags(child.flags() | Qt.ItemIsDragEnabled)
+            typed.addChild(child)
+        self.tree.addTopLevelItem(typed)
 
         # ── Geometry ──────────────────────────────────────────────────
         geometry = QTreeWidgetItem(["Geometry"])
