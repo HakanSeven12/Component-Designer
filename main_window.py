@@ -7,11 +7,11 @@ from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QFileDialog, QMessageBox, QComboBox, QCheckBox)
 from PySide2.QtCore import Qt
 
-from flowchart import FlowchartView, _TYPED_INPUT_TYPES
-from preview import GeometryPreview
-from panels import ToolboxPanel
-from flowchart import FlowchartNodeItem
-from models import create_node_from_dict
+from .flowchart import FlowchartView, _TYPED_INPUT_TYPES
+from .preview import GeometryPreview
+from .panels import ToolboxPanel
+from .flowchart import FlowchartNodeItem
+from .models import create_node_from_dict
 
 
 class ComponentDesigner(QMainWindow):

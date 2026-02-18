@@ -5,7 +5,7 @@ Component Designer for FreeCAD Road Workbench
 import sys
 from PySide2.QtWidgets import QApplication
 
-from main_window import ComponentDesigner
+from .main_window import ComponentDesigner
 
 
 def main():

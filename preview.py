@@ -7,8 +7,8 @@ from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsEllipseIt
 from PySide2.QtCore import Qt, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QFont
 
-from models import PointNode, LinkNode
-from base_graphics_view import BaseGraphicsView
+from .models import PointNode, LinkNode
+from .base_graphics_view import BaseGraphicsView
 
 
 BASE_FONT_NODE_LABEL = 9

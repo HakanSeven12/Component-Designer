@@ -5,9 +5,9 @@ Flowchart Module for Component Designer
 from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
 from PySide2.QtCore import Qt, Signal, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
-from models import PointNode, LinkNode
-from base_graphics_view import BaseGraphicsView
-from node import FlowchartNodeItem
+from .models import PointNode, LinkNode
+from .base_graphics_view import BaseGraphicsView
+from .node import FlowchartNodeItem
 
 
 class ConnectionWire(QGraphicsPathItem):
