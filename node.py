@@ -4,8 +4,8 @@ Node Widgets for Flowchart
 Architecture
 ------------
 - Every port — geometry flow, numeric value, combo selector — is a PortRow.
-- Input ports  → left side  (orange dot)
-- Output ports → right side (green dot)
+- Input ports  -> left side  (orange dot)
+- Output ports -> right side (green dot)
 - No separate "properties" form area; all parameters are ports.
 - All sizes are layout-driven; no hardcoded pixel dimensions.
 
@@ -26,11 +26,11 @@ from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QFont
 
 
 # ---------------------------------------------------------------------------
-# Visual constants  (true constants only — no layout pixel values)
+# Visual constants
 # ---------------------------------------------------------------------------
 
-INPUT_COLOR   = QColor(255, 150,  50)   # Orange — all input  port dots
-OUTPUT_COLOR  = QColor(100, 200, 100)   # Green  — all output port dots
+INPUT_COLOR        = QColor(255, 150,  50)
+OUTPUT_COLOR       = QColor(100, 200, 100)
 HEADER_BG          = QColor( 70, 130, 180)
 HEADER_BG_SELECTED = QColor(255, 140,   0)
 BODY_BG            = QColor(248, 248, 252)
@@ -38,41 +38,34 @@ BORDER_NORMAL      = QColor( 60,  60,  60)
 BORDER_SELECTED    = QColor(255, 120,   0)
 SHADOW_COLOR       = QColor(  0,   0,   0, 30)
 GLOW_COLOR         = QColor(255, 120,   0, 80)
-DOT_RADIUS = 5   # connection dot radius in px
+DOT_RADIUS = 5
 
-# Highlight colors when hovering over a port row
-ROW_HOVER_INPUT  = QColor(255, 220, 180, 60)   # faint orange tint
-ROW_HOVER_OUTPUT = QColor(180, 240, 180, 60)   # faint green  tint
+ROW_HOVER_INPUT  = QColor(255, 220, 180, 60)
+ROW_HOVER_OUTPUT = QColor(180, 240, 180, 60)
 
 
 # ---------------------------------------------------------------------------
-# PortDot  — visual indicator only (no click handling here)
+# PortDot
 # ---------------------------------------------------------------------------
 
 class PortDot(QWidget):
-    """
-    Purely visual connection dot.
-    Click handling is delegated to the parent PortRow.
-    """
+    """Purely visual connection dot — click handling delegated to PortRow."""
 
     def __init__(self, color: QColor, parent=None):
         super().__init__(parent)
         self._color   = color
         self._hovered = False
-        # No PointingHandCursor here — the whole row handles it
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        # Mouse events pass through to the parent PortRow
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def sizeHint(self):
-        d = DOT_RADIUS * 2 + 6   # dot diameter + padding
+        d = DOT_RADIUS * 2 + 6
         return QSize(d, d)
 
     def minimumSizeHint(self):
         return self.sizeHint()
 
     def set_hovered(self, hovered: bool):
-        """Called by the parent PortRow to update hover visual."""
         self._hovered = hovered
         self.update()
 
@@ -89,7 +82,7 @@ class PortDot(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# PortRow
+# Shared editor style sheets
 # ---------------------------------------------------------------------------
 
 EDITOR_STYLE = """
@@ -112,11 +105,6 @@ EDITOR_STYLE_DISABLED = EDITOR_STYLE.replace(
     "background: white", "background: #e0e0e0"
 )
 
-
-# ---------------------------------------------------------------------------
-# ComboField  — label + combobox, no connection dot, stacked vertically
-# ---------------------------------------------------------------------------
-
 COMBO_STYLE = """
     QComboBox {
         background: white; border: 1px solid #c0c0c0;
@@ -134,14 +122,12 @@ COMBO_STYLE = """
 LABEL_STYLE = "QLabel { font-size: 8pt; color: #444; background: transparent; }"
 
 
-class ComboField(QWidget):
-    """
-    A standalone combo selector — no connection dot.
+# ---------------------------------------------------------------------------
+# ComboField  — label + combobox, no connection dot, stacked vertically
+# ---------------------------------------------------------------------------
 
-    Layout (vertical):
-        Label
-        [ComboBox ▼]
-    """
+class ComboField(QWidget):
+    """A standalone combo selector — no connection dot."""
 
     value_changed = Signal(str, object)  # (field_name, new_value)
 
@@ -179,43 +165,37 @@ class ComboField(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# PortRow  — a single connectable port row (None / float / string only)
+# PortRow
 # ---------------------------------------------------------------------------
 
 class PortRow(QWidget):
     """
     One connectable port row.  Clicking ANYWHERE on the row triggers the
-    port connection logic — the dot is a visual cue only.
-
-    Input  layout:  [dot] [label] [editor?] ···
-    Output layout:  ··· [editor?] [label] [dot]
+    port connection logic.
 
     editor_type:
-      None     → pure flow port (dot + label, no editor)
-      'float'  → QDoubleSpinBox
-      'string' → QLineEdit
-
-    Combo (list) ports are NOT handled here — use ComboField instead.
+      None     -> pure flow port (dot + label, no editor)
+      'float'  -> QDoubleSpinBox
+      'string' -> QLineEdit
+      'bool'   -> QCheckBox
     """
 
-    port_clicked  = Signal(object, str)   # (FlowchartNodeItem, port_name)
-    value_changed = Signal(str,   object) # (port_name, new_value)
+    port_clicked  = Signal(object, str)
+    value_changed = Signal(str,   object)
 
     def __init__(self, port_name, port_label, direction,
                  editor_type=None, editor_value=None,
                  node_item_ref=None, parent=None):
         super().__init__(parent)
         self.port_name     = port_name
-        self.direction     = direction      # 'input' | 'output'
+        self.direction     = direction
         self.node_item_ref = node_item_ref
         self._connected    = False
         self._hovered      = False
 
-        # Determine dot color and hover tint for this row
-        self._dot_color    = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
-        self._hover_color  = ROW_HOVER_INPUT if direction == 'input' else ROW_HOVER_OUTPUT
+        self._dot_color   = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
+        self._hover_color = ROW_HOVER_INPUT if direction == 'input' else ROW_HOVER_OUTPUT
 
-        # Visual dot (mouse events pass through it to us)
         self._dot = PortDot(self._dot_color, self)
 
         self._label = QLabel(port_label)
@@ -223,7 +203,6 @@ class PortRow(QWidget):
             "QLabel { font-size: 8pt; color: #1a1a1a; background: transparent; }"
         )
         self._label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        # Label mouse events also propagate to the row
         self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         self._editor = self._make_editor(editor_type, editor_value)
@@ -251,13 +230,7 @@ class PortRow(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent;")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-        # Show a hand cursor over the whole row to hint it is clickable
         self.setCursor(Qt.PointingHandCursor)
-
-    # ------------------------------------------------------------------
-    # Editor factory (float / string only)
-    # ------------------------------------------------------------------
 
     def _make_editor(self, etype, value):
         if etype == 'float':
@@ -269,7 +242,6 @@ class PortRow(QWidget):
             w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             w.setStyleSheet(EDITOR_STYLE)
             w.valueChanged.connect(lambda v: self.value_changed.emit(self.port_name, v))
-            # Don't steal mouse press from the row — but DO allow normal spinbox use
             return w
 
         if etype == 'string':
@@ -284,7 +256,6 @@ class PortRow(QWidget):
             w = QCheckBox()
             w.setChecked(bool(value) if value is not None else False)
             w.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            # Style the checkbox to be compact and clear
             w.setStyleSheet(
                 "QCheckBox { spacing: 4px; font-size: 8pt; background: transparent; }"
                 "QCheckBox::indicator { width: 14px; height: 14px; }"
@@ -296,17 +267,12 @@ class PortRow(QWidget):
             w.toggled.connect(lambda v: self.value_changed.emit(self.port_name, v))
             return w
 
-        return None   # pure flow port — dot + label only
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        return None
 
     def set_node_item(self, node_item):
         self.node_item_ref = node_item
 
     def set_connected(self, connected: bool):
-        """Grey-out the editor when a wire is attached."""
         self._connected = connected
         if self._editor is None:
             return
@@ -318,7 +284,6 @@ class PortRow(QWidget):
             self._editor.setEnabled(not connected)
 
     def dot_scene_pos(self) -> QPointF:
-        """Scene-space centre of the connection dot."""
         if self.node_item_ref is None:
             return QPointF(0, 0)
         local = self.mapTo(
@@ -328,31 +293,19 @@ class PortRow(QWidget):
         )
         return self.node_item_ref.proxy.mapToScene(local)
 
-    # ------------------------------------------------------------------
-    # Mouse events — entire row is the click target
-    # ------------------------------------------------------------------
-
     def enterEvent(self, event):
-        """Highlight row and dot on hover."""
         self._hovered = True
         self._dot.set_hovered(True)
         self.update()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        """Remove highlight when mouse leaves."""
         self._hovered = False
         self._dot.set_hovered(False)
         self.update()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
-        """
-        Clicking anywhere on the row fires the port connection signal.
-        Left-click on an editor child still reaches the editor because Qt
-        delivers child-widget events to the child first; only clicks on
-        the empty / label / dot areas fall through to the row.
-        """
         if event.button() == Qt.LeftButton:
             if self.node_item_ref:
                 self.port_clicked.emit(self.node_item_ref, self.port_name)
@@ -361,7 +314,6 @@ class PortRow(QWidget):
             super().mousePressEvent(event)
 
     def paintEvent(self, event):
-        """Draw a subtle tinted background on hover."""
         if self._hovered:
             p = QPainter(self)
             p.setRenderHint(QPainter.Antialiasing)
@@ -376,19 +328,7 @@ class PortRow(QWidget):
 # ---------------------------------------------------------------------------
 
 class FlowchartNodeItem(QGraphicsRectItem):
-    """
-    Draggable flowchart node.
-
-    ┌──────────────────────────────────────┐
-    │  Type · Name            (header)     │
-    ├──────────────────────────────────────┤
-    │ ● IN   [editor]  [editor]  OUT ●    │
-    │ ● START          [editor]    X ●    │
-    │ ● END                        Y ●    │
-    └──────────────────────────────────────┘
-
-    All sizing is driven by QLayout.
-    """
+    """Draggable flowchart node."""
 
     def __init__(self, node, x, y, parent=None):
         super().__init__(0, 0, 10, 10, parent)
@@ -400,10 +340,8 @@ class FlowchartNodeItem(QGraphicsRectItem):
             QGraphicsRectItem.ItemSendsGeometryChanges,
         )
 
-        # port_name → PortRow
         self.ports: dict = {}
 
-        # ── container ─────────────────────────────────────────────────
         self.container_widget = QWidget()
         self.container_widget.setAttribute(Qt.WA_TranslucentBackground)
         self.container_widget.setStyleSheet("background: transparent;")
@@ -420,12 +358,10 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         self.container_widget.setLayout(root)
 
-        # ── proxy ──────────────────────────────────────────────────────
         self.proxy = QGraphicsProxyWidget(self)
         self.proxy.setWidget(self.container_widget)
         self.proxy.setPos(0, 0)
 
-        # Back-fill node_item references
         for pr in self.ports.values():
             pr.set_node_item(self)
 
@@ -472,7 +408,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
         return w
 
     # ==================================================================
-    # Body — port rows
+    # Body
     # ==================================================================
 
     def _build_body(self):
@@ -493,35 +429,22 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
     def _populate_port_rows(self, layout):
         """
-        Build the body content from port declarations.
+        Build body content from port declarations.
 
-        Layout structure
-        ----------------
-        ┌─────────────────────────────────────┐
-        │  [combo fields — full width]        │  (only if present)
-        ├─────────────────────────────────────┤
-        │ ┌─── inputs ──┐ │ ┌─── outputs ───┐ │
-        │ │ ● ref       │ │ │   vector ●    │ │
-        │ │ ● offset [■]│ │ │   x      ●    │ │
-        │ └─────────────┘ │ └───────────────┘ │
-        └─────────────────────────────────────┘
-
-        - Input column  : left,  expands to fill available space
-        - Output column : right, sized to content (no stretch)
-        - Vertical divider separates the two columns (only when both exist)
-        - Input PortRows always expand horizontally (stretch=1 in their column)
-        - Output PortRows are right-aligned, sized to content
+        Layout structure:
+          [combo fields — full width at top]
+          [input column] | [divider] | [output column]
         """
         self.ports.clear()
 
         inputs  = self.node.get_input_ports()
         outputs = self.node.get_output_ports()
 
-        combo_inputs = {n: t for n, t in inputs.items() if isinstance(t, list)}
-        port_inputs  = {n: t for n, t in inputs.items() if not isinstance(t, list)}
+        combo_inputs = {n: t for n, t in inputs.items()  if isinstance(t, list)}
+        port_inputs  = {n: t for n, t in inputs.items()  if not isinstance(t, list)}
         port_outputs = {n: t for n, t in outputs.items() if not isinstance(t, list)}
 
-        # ── 1. Combo fields — full-width section at the top ───────────
+        # ── 1. Combo fields (full-width) ──────────────────────────────
         if combo_inputs:
             combo_section = QWidget()
             combo_section.setAttribute(Qt.WA_TranslucentBackground)
@@ -548,23 +471,22 @@ class FlowchartNodeItem(QGraphicsRectItem):
         def make_port_row(port_name, port_type, direction):
             etype = port_type if port_type in ('float', 'string', 'bool') else None
             eval_ = getattr(self.node, port_name, None) if etype else None
-            
-            # Special handling for codes fields: convert list to comma-separated string
+
             if port_name in ('point_codes', 'link_codes') and isinstance(eval_, list):
                 eval_ = ', '.join(eval_)
-            
-            # Special label formatting for slope ports
+
             if port_name == 'slope':
                 lbl = 'Slope (%)'
             else:
                 lbl = port_name.replace('_', ' ').title()
+
             pr = PortRow(
-                port_name    = port_name,
-                port_label   = lbl,
-                direction    = direction,
-                editor_type  = etype,
-                editor_value = eval_,
-                node_item_ref= None,
+                port_name     = port_name,
+                port_label    = lbl,
+                direction     = direction,
+                editor_type   = etype,
+                editor_value  = eval_,
+                node_item_ref = None,
             )
             pr.value_changed.connect(self._on_value_changed)
             pr.port_clicked.connect(self._on_port_clicked)
@@ -577,7 +499,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         if not has_inputs and not has_outputs:
             return
 
-        # Outer horizontal container: [input col] | [divider] | [output col]
         columns = QWidget()
         columns.setAttribute(Qt.WA_TranslucentBackground)
         columns.setStyleSheet("background: transparent;")
@@ -585,7 +506,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         col_lay.setContentsMargins(0, 2, 0, 2)
         col_lay.setSpacing(0)
 
-        # ── Input column (expands to fill all available width) ────────
         if has_inputs:
             in_col = QWidget()
             in_col.setAttribute(Qt.WA_TranslucentBackground)
@@ -595,15 +515,12 @@ class FlowchartNodeItem(QGraphicsRectItem):
             in_lay.setSpacing(1)
             for name, ptype in port_inputs.items():
                 pr = make_port_row(name, ptype, 'input')
-                # Each input row stretches to column width
                 pr.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
                 in_lay.addWidget(pr)
             in_lay.addStretch(1)
             in_col.setLayout(in_lay)
-            # stretch=1 so input column takes all remaining space
             col_lay.addWidget(in_col, 1)
 
-        # ── Vertical divider (only when both columns present) ─────────
         if has_inputs and has_outputs:
             vdiv = QWidget()
             vdiv.setFixedWidth(1)
@@ -612,7 +529,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
             col_lay.addWidget(vdiv)
             col_lay.addSpacing(4)
 
-        # ── Output column (shrinks to content) ───────────────────────
         if has_outputs:
             out_col = QWidget()
             out_col.setAttribute(Qt.WA_TranslucentBackground)
@@ -626,40 +542,30 @@ class FlowchartNodeItem(QGraphicsRectItem):
                 out_lay.addWidget(pr)
             out_lay.addStretch(1)
             out_col.setLayout(out_lay)
-            # stretch=0 so output column is only as wide as needed
             col_lay.addWidget(out_col, 0)
 
         columns.setLayout(col_lay)
         layout.addWidget(columns)
 
     # ==================================================================
-    # Rebuild (after a combo changes the port structure)
+    # Rebuild after structural combo change
     # ==================================================================
 
     def rebuild_ports(self):
-        """Rebuild all port widgets after a structural combo change.
-
-        Signals are blocked on the body widget during the rebuild to prevent
-        the combo's currentIndexChanged from firing again while we are
-        tearing down and recreating children.
-        """
         self._body_widget.blockSignals(True)
 
         lay = self._body_layout
-
         widgets_to_remove = []
         while lay.count():
             item = lay.takeAt(0)
             w = item.widget()
             if w:
                 widgets_to_remove.append(w)
-
         for w in widgets_to_remove:
             w.hide()
             w.setParent(None)
 
         self.ports.clear()
-
         self._populate_port_rows(lay)
         lay.addStretch(0)
 
@@ -689,20 +595,25 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
     def _on_value_changed(self, port_name, value):
         if hasattr(self.node, port_name):
-            # Special handling for codes fields: convert comma-separated string to list
             if port_name in ('point_codes', 'link_codes') and isinstance(value, str):
-                # Split by comma and strip whitespace from each code
                 codes_list = [code.strip() for code in value.split(',') if code.strip()]
                 setattr(self.node, port_name, codes_list)
             else:
                 setattr(self.node, port_name, value)
-        # Structural combos trigger a full port rebuild
-        if port_name in ('geometry_type', 'link_type', 'target_type', 'parameter_type'):
-            # Use a single-shot QTimer so the combo finishes its own event
-            # handling before we tear down the widget tree it lives in.
+
+        # Structural combos that require a full port rebuild
+        structural_ports = (
+            'geometry_type',
+            'link_type',
+            'target_type',
+            'parameter_type',  # legacy
+            'data_type',       # InputParameterNode / OutputParameterNode
+        )
+        if port_name in structural_ports:
             from PySide2.QtCore import QTimer
             QTimer.singleShot(0, self.rebuild_ports)
             return
+
         if self.scene():
             self.scene().request_preview_update()
 
@@ -729,11 +640,10 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.scene().request_preview_update()
 
     # ==================================================================
-    # Size management — fully layout-driven
+    # Size management
     # ==================================================================
 
     def update_size(self):
-        """Fit the QGraphicsRectItem to the widget's layout-computed size."""
         lay = self.container_widget.layout()
         if lay:
             lay.activate()
@@ -777,7 +687,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         hh = self._header_widget.sizeHint().height()
         if hh <= 0:
-            hh = 32   # fallback before first layout pass
+            hh = 32
 
         # Shadow
         if not sel:
@@ -797,7 +707,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
             QRectF(0, hh, rect.width(), rect.height() - hh), 6, 6
         )
 
-        # Seam cover (prevents the gap between header and body arcs)
+        # Seam cover
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(BODY_BG))
         painter.drawRect(QRectF(1, hh - 6, rect.width() - 2, 8))

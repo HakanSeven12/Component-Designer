@@ -2,8 +2,8 @@
 Flowchart Module for Component Designer
 
 Connection rules (all ports are equal — no distinction between 'flow' and 'value'):
-  - Output port  →  Input port  on a different node = valid
-  - Input  port  →  Output port = invalid (must start from output)
+  - Output port  ->  Input port  on a different node = valid
+  - Input  port  ->  Output port = invalid (must start from output)
   - Same node connections are blocked
 
 Disconnect rule:
@@ -74,29 +74,20 @@ class FlowchartScene(QGraphicsScene):
     # ------------------------------------------------------------------
 
     def _is_output(self, node_item, port_name):
-        """True if port_name is a connectable output port (excludes combo selectors)."""
         ports = node_item.node.get_output_ports()
         return port_name in ports and not isinstance(ports[port_name], list)
 
     def _is_input(self, node_item, port_name):
-        """True if port_name is a connectable input port (excludes combo selectors)."""
         ports = node_item.node.get_input_ports()
         return port_name in ports and not isinstance(ports[port_name], list)
 
     def _is_port_connected(self, node_item, port_name):
-        """Return True if an input port already has a wire attached to it."""
         return any(
             w for w in self.port_wires
             if w['to_item'] is node_item and w['to_port'] == port_name
         )
 
     def can_connect(self, from_item, from_port, to_item, to_port):
-        """
-        A connection is valid when:
-          - from_port is an OUTPUT port of from_item
-          - to_port   is an INPUT  port of to_item
-          - they belong to different nodes
-        """
         if from_item is to_item:
             return False
         return self._is_output(from_item, from_port) and self._is_input(to_item, to_port)
@@ -110,17 +101,12 @@ class FlowchartScene(QGraphicsScene):
         is_in  = self._is_input(node_item, port_name)
 
         if not self.connection_in_progress:
-            # ── Disconnect: clicking a connected input port removes the wire ──
             if is_in and self._is_port_connected(node_item, port_name):
                 self._disconnect_input_port(node_item, port_name)
                 return
-
-            # ── Start a new connection from an output port ──
             if is_out:
                 self._start_connection(node_item, port_name)
-
         else:
-            # A connection is already in progress — try to finish it
             if is_in and node_item is not self.connection_start_item:
                 if self.can_connect(self.connection_start_item,
                                     self.connection_start_port,
@@ -132,31 +118,22 @@ class FlowchartScene(QGraphicsScene):
                 self._cancel_connection()
 
     # ------------------------------------------------------------------
-    # Disconnect a single input port
+    # Disconnect
     # ------------------------------------------------------------------
 
     def _disconnect_input_port(self, node_item, port_name):
-        """Remove the wire arriving at (node_item, port_name) and clean up."""
         stale = [w for w in self.port_wires
                  if w['to_item'] is node_item and w['to_port'] == port_name]
-
         for w in stale:
             self.removeItem(w['wire'])
             self.port_wires.remove(w)
-
-            # Remove from the connections list
             self.connections = [
                 c for c in self.connections
                 if not (c['to'] == node_item.node.id and c['to_port'] == port_name)
             ]
-
-            # Clear model cross-reference
             self._clear_node_ref(node_item.node, port_name)
-
-            # Un-grey the port editor
             if port_name in node_item.ports:
                 node_item.ports[port_name].set_connected(False)
-
         self.request_preview_update()
 
     # ------------------------------------------------------------------
@@ -167,7 +144,6 @@ class FlowchartScene(QGraphicsScene):
         self.connection_in_progress = True
         self.connection_start_item  = node_item
         self.connection_start_port  = port_name
-
         start_pos      = node_item.get_port_scene_pos(port_name)
         self.temp_wire = ConnectionWire(start_pos, start_pos)
         self.addItem(self.temp_wire)
@@ -176,7 +152,6 @@ class FlowchartScene(QGraphicsScene):
         if not self.connection_in_progress:
             return
 
-        # Remove any existing wire arriving at this input port (one-to-one rule)
         stale = [w for w in self.port_wires
                  if w['to_item'] is node_item and w['to_port'] == port_name]
         for w in stale:
@@ -186,11 +161,9 @@ class FlowchartScene(QGraphicsScene):
                                  if not (c['to'] == node_item.node.id
                                          and c['to_port'] == port_name)]
             self._clear_node_ref(node_item.node, port_name)
-            # Un-grey the port row
             if port_name in node_item.ports:
                 node_item.ports[port_name].set_connected(False)
 
-        # Create wire
         sp = self.connection_start_item.get_port_scene_pos(self.connection_start_port)
         ep = node_item.get_port_scene_pos(port_name)
 
@@ -211,7 +184,6 @@ class FlowchartScene(QGraphicsScene):
         self._set_node_ref(self.connection_start_item.node,
                            self.connection_start_port,
                            node_item.node, port_name)
-
         self.connections.append({
             'from':      self.connection_start_item.node.id,
             'to':        node_item.node.id,
@@ -219,18 +191,15 @@ class FlowchartScene(QGraphicsScene):
             'to_port':   port_name,
         })
 
-        # Grey-out the target port's editor
         if port_name in node_item.ports:
             node_item.ports[port_name].set_connected(True)
 
-        # Cleanup
         if self.temp_wire:
             self.removeItem(self.temp_wire)
             self.temp_wire = None
         self.connection_in_progress = False
         self.connection_start_item  = None
         self.connection_start_port  = None
-
         self.request_preview_update()
 
     def _cancel_connection(self):
@@ -246,7 +215,6 @@ class FlowchartScene(QGraphicsScene):
     # ------------------------------------------------------------------
 
     def _set_node_ref(self, from_node, from_port, to_node, to_port):
-        """Update model cross-references when a wire is created."""
         if isinstance(to_node, PointNode) and to_port == 'reference':
             to_node.from_point = from_node.id
         elif isinstance(to_node, LinkNode):
@@ -256,7 +224,6 @@ class FlowchartScene(QGraphicsScene):
                 to_node.end_point = from_node.id
 
     def _clear_node_ref(self, node, port):
-        """Clear model cross-reference when a wire is removed."""
         if isinstance(node, PointNode) and port == 'reference':
             node.from_point = None
         elif isinstance(node, LinkNode):
@@ -300,15 +267,13 @@ class FlowchartScene(QGraphicsScene):
         for w in [d for d in self.port_wires
                   if d['from_item'] is item or d['to_item'] is item]:
             self.removeItem(w['wire'])
-            # Un-grey the connected peer's port
-            peer = w['to_item'] if w['from_item'] is item else w['from_item']
-            pport = w['to_port'] if w['from_item'] is item else w['from_port']
+            peer  = w['to_item']   if w['from_item'] is item else w['from_item']
+            pport = w['to_port']   if w['from_item'] is item else w['from_port']
             if pport in peer.ports:
                 peer.ports[pport].set_connected(False)
 
         self.port_wires  = [w for w in self.port_wires
-                            if w['from_item'] is not item
-                            and w['to_item']  is not item]
+                            if w['from_item'] is not item and w['to_item'] is not item]
         self.connections = [c for c in self.connections
                             if c['from'] != node.id and c['to'] != node.id]
         if node.id in self.nodes:
@@ -318,7 +283,6 @@ class FlowchartScene(QGraphicsScene):
         return True
 
     def update_port_wires(self, moved_item):
-        """Reposition wires after a node is dragged."""
         for w in self.port_wires:
             if w['from_item'] is moved_item:
                 w['wire'].start_pos = moved_item.get_port_scene_pos(w['from_port'])
@@ -431,9 +395,9 @@ class FlowchartView(BaseGraphicsView):
             "Link":             self.create_link_node_at,
             "Shape":            self.create_shape_node_at,
             "Decision":         self.create_decision_node_at,
-            "Input Parameter":  self.create_input_parameter_node_at,
-            "Output Parameter": self.create_output_parameter_node_at,
-            "Target Parameter": self.create_target_parameter_node_at,
+            "Input":  self.create_input_parameter_node_at,
+            "Output": self.create_output_parameter_node_at,
+            "Target": self.create_target_parameter_node_at,
         }
         fn = creators.get(etype)
         if fn:
@@ -463,43 +427,54 @@ class FlowchartView(BaseGraphicsView):
     def create_point_node_at(self, x, y):
         from models import PointNode
         n = PointNode(self._next_id(), f"P{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_link_node_at(self, x, y):
         from models import LinkNode
         n = LinkNode(self._next_id(), f"L{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_shape_node_at(self, x, y):
         from models import ShapeNode
         n = ShapeNode(self._next_id(), f"S{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_decision_node_at(self, x, y):
         from models import DecisionNode
         n = DecisionNode(self._next_id(), f"D{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_input_parameter_node_at(self, x, y):
         from models import InputParameterNode
         n = InputParameterNode(self._next_id(), f"IP{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_output_parameter_node_at(self, x, y):
         from models import OutputParameterNode
         n = OutputParameterNode(self._next_id(), f"OP{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_target_parameter_node_at(self, x, y):
         from models import TargetParameterNode
         n = TargetParameterNode(self._next_id(), f"TP{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
     def create_generic_node_at(self, ntype, x, y):
         n = FlowchartNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
-        self.scene.add_flowchart_node(n, x, y); return n
+        self.scene.add_flowchart_node(n, x, y)
+        return n
 
-    # Toolbar / programmatic helpers
+    # ------------------------------------------------------------------
+    # Toolbar / programmatic helpers (double-click path)
+    # ------------------------------------------------------------------
+
     def add_point_node(self):
         return self.create_point_node_at(*self._auto_pos())
 
@@ -512,6 +487,14 @@ class FlowchartView(BaseGraphicsView):
     def add_decision_node(self):
         return self.create_decision_node_at(*self._auto_pos())
 
-    # Legacy alias
+    def add_input_parameter_node(self):
+        return self.create_input_parameter_node_at(*self._auto_pos())
+
+    def add_output_parameter_node(self):
+        return self.create_output_parameter_node_at(*self._auto_pos())
+
+    def add_target_parameter_node(self):
+        return self.create_target_parameter_node_at(*self._auto_pos())
+
     def get_next_node_id(self):
         return self._next_id()
