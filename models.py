@@ -2,8 +2,11 @@
 Data Models for Component Designer
 """
 
+import math
 from enum import Enum
 from abc import ABC, abstractmethod
+from PySide2.QtCore import QPointF
+from PySide2.QtGui import QColor
 
 
 class PointGeometryType(Enum):
@@ -145,7 +148,6 @@ class PointNode(FlowchartNode):
             setattr(self, port_name, value)
 
     def compute_position(self, from_point_pos=None):
-        import math
         gt   = self.geometry_type
         base = from_point_pos or (0.0, 0.0)
 
@@ -185,9 +187,7 @@ class PointNode(FlowchartNode):
         return (self.computed_x, self.computed_y)
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
-        from PySide2.QtCore import QPointF
-        from PySide2.QtGui import QColor
-        from preview import (PreviewPointItem, PreviewTextItem,
+        from .preview import (PreviewPointItem, PreviewTextItem,
                              BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
         from_pos = point_positions.get(self.from_point) if self.from_point else None
@@ -201,7 +201,7 @@ class PointNode(FlowchartNode):
         items = [PreviewPointItem(x, y, self)]
 
         if self.add_link and self.from_point and from_pos is not None:
-            from preview import PreviewLinkLine
+            from .preview import PreviewLinkLine
             fx =  from_pos[0] * scale_factor
             fy = -from_pos[1] * scale_factor
             items.append(PreviewLinkLine(fx, fy, x, y, self))
@@ -225,7 +225,6 @@ class PointNode(FlowchartNode):
         return items
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(0, 120, 255)
 
     def to_dict(self):
@@ -298,9 +297,7 @@ class LinkNode(FlowchartNode):
             self.computed_slope  = 0.0
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
-        from PySide2.QtCore import QPointF
-        from PySide2.QtGui import QColor
-        from preview import (PreviewLineItem, PreviewTextItem,
+        from .preview import (PreviewLineItem, PreviewTextItem,
                              BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
         items = []
         if self.start_point and self.end_point:
@@ -330,7 +327,6 @@ class LinkNode(FlowchartNode):
         return items
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(0, 150, 0)
 
     def to_dict(self):
@@ -372,7 +368,6 @@ class ShapeNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(200, 200, 150)
 
     def to_dict(self):
@@ -412,7 +407,6 @@ class DecisionNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(255, 200, 100)
 
     def to_dict(self):
@@ -444,7 +438,6 @@ class StartNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(100, 200, 100)
 
     @classmethod
@@ -475,7 +468,6 @@ class VariableNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(200, 200, 255)
 
     def to_dict(self):
@@ -505,7 +497,6 @@ class GenericNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(150, 150, 150)
 
 
@@ -536,7 +527,6 @@ class InputParameterNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(100, 150, 255)
 
     def to_dict(self):
@@ -583,7 +573,6 @@ class OutputParameterNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(255, 150, 100)
 
     def to_dict(self):
@@ -625,7 +614,6 @@ class TargetParameterNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(150, 255, 150)
 
     def to_dict(self):
@@ -669,7 +657,6 @@ class IntegerInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(130, 160, 255)
 
     def to_dict(self):
@@ -709,7 +696,6 @@ class DoubleInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(100, 150, 255)
 
     def to_dict(self):
@@ -749,7 +735,6 @@ class StringInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(160, 200, 255)
 
     def to_dict(self):
@@ -796,7 +781,6 @@ class GradeInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(100, 210, 180)
 
     def to_dict(self):
@@ -838,7 +822,6 @@ class SlopeInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(80, 190, 160)
 
     def to_dict(self):
@@ -878,7 +861,6 @@ class YesNoInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(255, 210, 120)
 
     def to_dict(self):
@@ -930,7 +912,6 @@ class SuperelevationInputNode(FlowchartNode):
         return []
 
     def get_preview_display_color(self):
-        from PySide2.QtGui import QColor
         return QColor(180, 130, 255)
 
     def to_dict(self):

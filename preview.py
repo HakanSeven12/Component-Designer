@@ -1,10 +1,12 @@
 """
 Preview Module for Component Designer
 """
+import traceback
+from collections import deque
 from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
                                QGraphicsLineItem, QGraphicsPolygonItem, QGraphicsItem,
                                QGraphicsTextItem)
-from PySide2.QtCore import Qt, QPointF
+from PySide2.QtCore import Qt, QPointF, Signal
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QFont
 
 from .models import PointNode, LinkNode
@@ -157,7 +159,6 @@ class PreviewLinkLine(QGraphicsLineItem):
 
 class PreviewScene(QGraphicsScene):
 
-    from PySide2.QtCore import Signal
     node_clicked = Signal(object)
 
     def __init__(self):
@@ -261,7 +262,6 @@ class GeometryPreview(BaseGraphicsView):
         origin_text.setFont(f)
 
     def topological_sort_nodes(self, flowchart_nodes):
-        from collections import deque
 
         in_degree = {nid: 0 for nid in flowchart_nodes}
         adjacency = {nid: [] for nid in flowchart_nodes}
@@ -325,7 +325,6 @@ class GeometryPreview(BaseGraphicsView):
                     self.scene.addItem(item)
             except Exception as e:
                 print(f"Error creating preview for {node.type} {node.name}: {e}")
-                import traceback
                 traceback.print_exc()
 
         self._rescale_text_items()

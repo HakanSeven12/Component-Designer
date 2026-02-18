@@ -5,7 +5,7 @@ Flowchart Module for Component Designer
 from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
 from PySide2.QtCore import Qt, Signal, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
-from .models import PointNode, LinkNode
+from .models import *
 from .base_graphics_view import BaseGraphicsView
 from .node import FlowchartNodeItem
 
@@ -215,7 +215,6 @@ class FlowchartScene(QGraphicsScene):
         return item
 
     def delete_selected_node(self):
-        from models import StartNode
         selected = [i for i in self.selectedItems() if isinstance(i, FlowchartNodeItem)]
         if not selected:
             return False
@@ -331,7 +330,6 @@ class FlowchartView(BaseGraphicsView):
                     self.centerOn(item)
 
     def create_start_node(self):
-        from models import StartNode
         self.scene.add_flowchart_node(StartNode("START", "START"), 50, 50)
 
     def on_node_selected(self, node):
@@ -387,56 +385,47 @@ class FlowchartView(BaseGraphicsView):
         return x, y
 
     def create_point_node_at(self, x, y):
-        from models import PointNode
         n = PointNode(self._next_id(), f"P{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_link_node_at(self, x, y):
-        from models import LinkNode
         n = LinkNode(self._next_id(), f"L{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_shape_node_at(self, x, y):
-        from models import ShapeNode
         n = ShapeNode(self._next_id(), f"S{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_decision_node_at(self, x, y):
-        from models import DecisionNode
         n = DecisionNode(self._next_id(), f"D{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_input_parameter_node_at(self, x, y):
-        from models import InputParameterNode
         n = InputParameterNode(self._next_id(), f"IP{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_output_parameter_node_at(self, x, y):
-        from models import OutputParameterNode
         n = OutputParameterNode(self._next_id(), f"OP{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_target_parameter_node_at(self, x, y):
-        from models import TargetParameterNode
         n = TargetParameterNode(self._next_id(), f"TP{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_typed_input_node_at(self, node_type, x, y):
-        from models import create_node_from_type
         prefix = ''.join(w[0] for w in node_type.split()) + str(self.node_counter)
         n = create_node_from_type(node_type, self._next_id(), prefix)
         self.scene.add_flowchart_node(n, x, y)
         return n
 
     def create_generic_node_at(self, ntype, x, y):
-        from models import GenericNode
         n = GenericNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
         self.scene.add_flowchart_node(n, x, y)
         return n

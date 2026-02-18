@@ -9,8 +9,16 @@ from .main_window import ComponentDesigner
 
 
 def main():
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')
+    # Reuse existing QApplication instance if already running (e.g. inside FreeCAD)
+    app = QApplication.instance()
+    if app is None:
+        # Standalone mode: create a new QApplication
+        app = QApplication(sys.argv)
+        app.setStyle('Fusion')
+        standalone = True
+    else:
+        standalone = False
+
     app.setApplicationName("Component Designer")
     app.setOrganizationName("FreeCAD Road Workbench")
     app.setApplicationVersion("1.0")
@@ -18,7 +26,8 @@ def main():
     window = ComponentDesigner()
     window.show()
 
-    sys.exit(app.exec_())
+    if standalone:
+        sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

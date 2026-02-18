@@ -2,6 +2,7 @@
 Main Window for Component Designer
 """
 import json
+import traceback
 from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QSplitter, QAction, QToolBar,
                                QFileDialog, QMessageBox, QComboBox, QCheckBox)
@@ -294,7 +295,6 @@ class ComponentDesigner(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load file:\n{e}")
-            import traceback
             traceback.print_exc()
 
     def check_save_changes(self):

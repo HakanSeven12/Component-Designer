@@ -7,8 +7,8 @@ from PySide2.QtWidgets import (
     QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
     QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
 )
-from PySide2.QtCore import Qt, Signal, QPointF, QSize
-from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QFont
+from PySide2.QtCore import Qt, Signal, QPointF, QSize,QTimer,QRectF
+from PySide2.QtGui import QPainter, QBrush, QColor, QPen
 
 
 INPUT_COLOR        = QColor(255, 150,  50)
@@ -566,7 +566,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
             'data_type',
         )
         if port_name in structural_ports:
-            from PySide2.QtCore import QTimer
             QTimer.singleShot(0, self.rebuild_ports)
             return
 
@@ -625,7 +624,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         option.state &= ~QStyle.State_Selected
         painter.setRenderHint(QPainter.Antialiasing)
 
-        from PySide2.QtCore import QRectF
         rect = self.rect()
         sel  = self.isSelected()
 
