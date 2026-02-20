@@ -313,6 +313,7 @@ class FlowchartView(BaseGraphicsView):
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.setAcceptDrops(True)
         self.node_counter = 0
+        self._clipboard_node = None  
 
         self.scene.node_selected.connect(self.on_node_selected)
         self.setBackgroundBrush(QBrush(QColor(240, 240, 245)))
@@ -320,6 +321,61 @@ class FlowchartView(BaseGraphicsView):
 
     def restore_drag_mode(self):
         self.setDragMode(QGraphicsView.RubberBandDrag)
+
+    def keyPressEvent(self, event):
+        # Cancel wire drawing on Escape
+        if event.key() == Qt.Key_Escape and self.scene.connection_in_progress:
+            self.scene._cancel_connection()
+            event.accept()
+            return
+
+        # Copy selected node
+        if event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier:
+            selected = [i for i in self.scene.selectedItems()
+                        if isinstance(i, FlowchartNodeItem)]
+            if selected:
+                self._clipboard_node = selected[0].node
+                event.accept()
+            return
+
+        # Paste copied node
+        if event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier:
+            if self._clipboard_node is not None:
+                self._paste_node()
+                event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+    def _paste_node(self):
+        """Paste a deep copy of the clipboard node into the scene."""
+        import copy
+        src  = self._clipboard_node
+        data = src.to_dict()
+
+        # Assign a new unique id and offset position
+        new_id   = self._next_id()
+        data['id'] = new_id
+        data['x']  = src.x + 30
+        data['y']  = src.y + 30
+
+        # Clear connection references so the copy starts unconnected
+        for ref_field in ('from_point', 'start_point', 'end_point'):
+            if ref_field in data:
+                data[ref_field] = None
+
+        from .models import create_node_from_dict
+        new_node = create_node_from_dict(data)
+
+        item = self.scene.add_flowchart_node(new_node, new_node.x, new_node.y)
+
+        # Select the pasted node and deselect others
+        for i in self.scene.selectedItems():
+            i.setSelected(False)
+        item.setSelected(True)
+
+        # Update clipboard to point to the new node so repeated pastes offset correctly
+        self._clipboard_node = new_node
 
     def select_node_visually(self, node):
         self.selected_node = node

@@ -190,8 +190,37 @@ class ComponentDesigner(QMainWindow):
         self.update_preview()
 
     def update_preview(self):
+        # Resolve wire connections: propagate output values to connected input ports
+        self._resolve_connections()
         self.preview.update_preview(self.flowchart.scene.nodes)
 
+    def _resolve_connections(self):
+        """Push output port values from source nodes into connected input ports."""
+        nodes = self.flowchart.scene.nodes
+        for conn in self.flowchart.scene.connections:
+            from_node = nodes.get(conn['from'])
+            to_node   = nodes.get(conn['to'])
+            if from_node is None or to_node is None:
+                continue
+
+            from_port = conn.get('from_port', 'vector')
+            to_port   = conn.get('to_port',   'reference')
+
+            # Read value from source node's output port
+            if hasattr(from_node, 'get_port_value'):
+                value = from_node.get_port_value(from_port)
+            else:
+                value = getattr(from_node, from_port, None)
+
+            if value is None:
+                continue
+
+            # Write value into target node's input port
+            if hasattr(to_node, 'set_port_value'):
+                to_node.set_port_value(to_port, value)
+            elif hasattr(to_node, to_port):
+                setattr(to_node, to_port, value)
+                
     def toggle_codes(self, state):
         self.preview.show_codes = (state == Qt.Checked)
         self.update_preview()
