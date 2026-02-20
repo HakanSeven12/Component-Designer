@@ -4,6 +4,7 @@ Node registry and factory functions for creating nodes by type name or dict.
 
 from .geometry     import PointNode, LinkNode, ShapeNode
 from .parameters   import InputParameterNode, OutputParameterNode, TargetParameterNode
+from .targets      import SurfaceTargetNode, ElevationTargetNode, OffsetTargetNode
 from .typed_inputs import (IntegerInputNode, DoubleInputNode, StringInputNode,
                            GradeInputNode, SlopeInputNode,
                            YesNoInputNode, SuperelevationInputNode)
@@ -12,15 +13,23 @@ from .workflow     import StartNode, DecisionNode, VariableNode, GenericNode
 
 # Maps the node's 'type' string to its class for serialization/deserialization.
 NODE_REGISTRY = {
+    # Geometry
     'Point':    PointNode,
     'Link':     LinkNode,
     'Shape':    ShapeNode,
+    # Workflow
     'Decision': DecisionNode,
     'Variable': VariableNode,
     'Start':    StartNode,
+    # Parameters
     'Input':    InputParameterNode,
     'Output':   OutputParameterNode,
-    'Target':   TargetParameterNode,
+    'Target':   TargetParameterNode,   # legacy – kept for old JSON files
+    # Target nodes (new)
+    'Surface Target':   SurfaceTargetNode,
+    'Elevation Target': ElevationTargetNode,
+    'Offset Target':    OffsetTargetNode,
+    # Typed inputs
     'Integer Input':        IntegerInputNode,
     'Double Input':         DoubleInputNode,
     'String Input':         StringInputNode,

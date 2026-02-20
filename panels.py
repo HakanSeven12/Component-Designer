@@ -52,6 +52,10 @@ class DraggableTreeWidget(QTreeWidget):
         drag.exec_(Qt.CopyAction)
 
 
+# Node types handled by the new specialised target creators
+_TARGET_TYPES = ("Surface Target", "Elevation Target", "Offset Target")
+
+
 class ToolboxPanel(QWidget):
 
     element_selected = Signal(str)
@@ -68,14 +72,25 @@ class ToolboxPanel(QWidget):
         self.tree.setHeaderLabel("Toolbox")
         self.tree.setIndentation(16)
 
+        # Parameters
         params = QTreeWidgetItem(["Parameters"])
         params.setFlags(params.flags() & ~Qt.ItemIsDragEnabled)
-        for label in ("Output", "Target"):
+        for label in ("Output",):
             child = QTreeWidgetItem([label])
             child.setFlags(child.flags() | Qt.ItemIsDragEnabled)
             params.addChild(child)
         self.tree.addTopLevelItem(params)
 
+        # Targets (new specialised nodes)
+        targets = QTreeWidgetItem(["Targets"])
+        targets.setFlags(targets.flags() & ~Qt.ItemIsDragEnabled)
+        for label in _TARGET_TYPES:
+            child = QTreeWidgetItem([label])
+            child.setFlags(child.flags() | Qt.ItemIsDragEnabled)
+            targets.addChild(child)
+        self.tree.addTopLevelItem(targets)
+
+        # Typed Inputs
         typed = QTreeWidgetItem(["Typed Inputs"])
         typed.setFlags(typed.flags() & ~Qt.ItemIsDragEnabled)
         for label in (
@@ -92,6 +107,7 @@ class ToolboxPanel(QWidget):
             typed.addChild(child)
         self.tree.addTopLevelItem(typed)
 
+        # Geometry
         geometry = QTreeWidgetItem(["Geometry"])
         geometry.setFlags(geometry.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Point", "Link", "Shape"):
@@ -100,6 +116,7 @@ class ToolboxPanel(QWidget):
             geometry.addChild(child)
         self.tree.addTopLevelItem(geometry)
 
+        # Auxiliary
         auxiliary = QTreeWidgetItem(["Auxiliary"])
         auxiliary.setFlags(auxiliary.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Auxiliary Point", "Auxiliary Line", "Auxiliary Curve"):
@@ -108,6 +125,7 @@ class ToolboxPanel(QWidget):
             auxiliary.addChild(child)
         self.tree.addTopLevelItem(auxiliary)
 
+        # Workflow
         workflow = QTreeWidgetItem(["Workflow"])
         workflow.setFlags(workflow.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Decision", "Switch", "Variable"):

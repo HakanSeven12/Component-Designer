@@ -6,6 +6,7 @@ from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
 from PySide2.QtCore import Qt, Signal, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
 from .models import *
+from .models.targets import SurfaceTargetNode, ElevationTargetNode, OffsetTargetNode
 from .base_graphics_view import BaseGraphicsView
 from .node import FlowchartNodeItem
 from .undo_stack import (
@@ -450,6 +451,7 @@ class FlowchartView(BaseGraphicsView):
 
         self.scene.node_selected.connect(self.on_node_selected)
         self.setBackgroundBrush(QBrush(QColor(240, 240, 245)))
+        self.setDragMode(QGraphicsView.RubberBandDrag)
         self.create_start_node()
 
     # ------------------------------------------------------------------
@@ -524,38 +526,56 @@ class FlowchartView(BaseGraphicsView):
             widget = widget.parentWidget()
 
     # ------------------------------------------------------------------
-    # Drag tracking (for MoveNodeCommand)
+    # Drag tracking (for MoveNodeCommand) + rubber-band selection
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event):
-        # Record start positions of all selected items before a drag
         if event.button() == Qt.LeftButton:
-            self._drag_start_positions = {
-                item: item.pos()
-                for item in self.scene.selectedItems()
-                if isinstance(item, FlowchartNodeItem)
-            }
+            item_under = self.itemAt(event.pos())
+            if isinstance(item_under, FlowchartNodeItem) or (
+                item_under is not None and
+                isinstance(item_under.parentItem(), FlowchartNodeItem)
+            ):
+                # Clicking ON a node: switch to NoDrag so the item can
+                # move freely, and record positions for MoveNodeCommand.
+                self.setDragMode(QGraphicsView.NoDrag)
+                self._drag_start_positions = {
+                    item: item.pos()
+                    for item in self.scene.selectedItems()
+                    if isinstance(item, FlowchartNodeItem)
+                }
+                # Also include the clicked item in case it wasn't selected yet
+                if isinstance(item_under, FlowchartNodeItem):
+                    self._drag_start_positions.setdefault(item_under, item_under.pos())
+                elif isinstance(item_under.parentItem(), FlowchartNodeItem):
+                    ni = item_under.parentItem()
+                    self._drag_start_positions.setdefault(ni, ni.pos())
+            else:
+                # Clicking on empty space: rubber-band selection
+                self.setDragMode(QGraphicsView.RubberBandDrag)
+                self._drag_start_positions = {}
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
-        if event.button() == Qt.LeftButton and self._drag_start_positions:
-            for item, old_pos in self._drag_start_positions.items():
-                new_pos = item.pos()
-                if (new_pos - old_pos).manhattanLength() > 1:
-                    cmd = MoveNodeCommand(
-                        self.scene, item, old_pos, new_pos
-                    )
-                    # Don't call redo() again — the item already moved;
-                    # push silently by bypassing the normal push path
-                    self.scene.undo_stack._stack = \
-                        self.scene.undo_stack._stack[
-                            :self.scene.undo_stack._index + 1
-                        ]
-                    self.scene.undo_stack._stack.append(cmd)
-                    self.scene.undo_stack._index = \
-                        len(self.scene.undo_stack._stack) - 1
-            self._drag_start_positions = {}
+        if event.button() == Qt.LeftButton:
+            if self._drag_start_positions:
+                for item, old_pos in self._drag_start_positions.items():
+                    new_pos = item.pos()
+                    if (new_pos - old_pos).manhattanLength() > 1:
+                        cmd = MoveNodeCommand(self.scene, item, old_pos, new_pos)
+                        # Push silently — item already moved, skip redo()
+                        self.scene.undo_stack._stack = \
+                            self.scene.undo_stack._stack[
+                                :self.scene.undo_stack._index + 1
+                            ]
+                        self.scene.undo_stack._stack.append(cmd)
+                        self.scene.undo_stack._index = \
+                            len(self.scene.undo_stack._stack) - 1
+                self._drag_start_positions = {}
+            # Always restore to RubberBandDrag after release so the next
+            # empty-space click still triggers selection box.
+            self.setDragMode(QGraphicsView.RubberBandDrag)
 
     # ------------------------------------------------------------------
     # Paste
@@ -599,6 +619,10 @@ class FlowchartView(BaseGraphicsView):
                 if item.node is node:
                     self.centerOn(item)
 
+    def restore_drag_mode(self):
+        # After middle-mouse pan ends, go back to rubber-band selection
+        self.setDragMode(QGraphicsView.RubberBandDrag)
+
     def create_start_node(self):
         # Start node is added directly (not via undo stack)
         self.scene.add_flowchart_node(StartNode("START", "START"), 50, 50)
@@ -634,6 +658,10 @@ class FlowchartView(BaseGraphicsView):
             "Input":    self.create_input_parameter_node_at,
             "Output":   self.create_output_parameter_node_at,
             "Target":   self.create_target_parameter_node_at,
+            # Specialised target nodes
+            "Surface Target":   self.create_surface_target_node_at,
+            "Elevation Target": self.create_elevation_target_node_at,
+            "Offset Target":    self.create_offset_target_node_at,
         }
         fn = creators.get(etype)
         if fn:
@@ -702,6 +730,27 @@ class FlowchartView(BaseGraphicsView):
     def create_generic_node_at(self, ntype, x, y):
         n = GenericNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
         return self._add_node(n, x, y)
+
+    def create_surface_target_node_at(self, x, y):
+        n = SurfaceTargetNode(self._next_id(), f"ST{self.node_counter}")
+        return self._add_node(n, x, y)
+
+    def create_elevation_target_node_at(self, x, y):
+        n = ElevationTargetNode(self._next_id(), f"ET{self.node_counter}")
+        return self._add_node(n, x, y)
+
+    def create_offset_target_node_at(self, x, y):
+        n = OffsetTargetNode(self._next_id(), f"OT{self.node_counter}")
+        return self._add_node(n, x, y)
+
+    def add_surface_target_node(self):
+        return self.create_surface_target_node_at(*self._auto_pos())
+
+    def add_elevation_target_node(self):
+        return self.create_elevation_target_node_at(*self._auto_pos())
+
+    def add_offset_target_node(self):
+        return self.create_offset_target_node_at(*self._auto_pos())
 
     def add_point_node(self):
         return self.create_point_node_at(*self._auto_pos())

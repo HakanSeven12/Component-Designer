@@ -231,6 +231,9 @@ class ComponentDesigner(QMainWindow):
             "Decision": self.flowchart.add_decision_node,
             "Output":   self.flowchart.add_output_parameter_node,
             "Target":   self.flowchart.add_target_parameter_node,
+            "Surface Target":   self.flowchart.add_surface_target_node,
+            "Elevation Target": self.flowchart.add_elevation_target_node,
+            "Offset Target":    self.flowchart.add_offset_target_node,
         }
         fn = creators.get(element_type)
         if fn:

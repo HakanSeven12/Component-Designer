@@ -24,7 +24,14 @@ from .geometry import (
 from .parameters import (
     InputParameterNode,
     OutputParameterNode,
-    TargetParameterNode,
+    TargetParameterNode,   # kept for backward-compat with old JSON files
+)
+
+# --- Target nodes (specialised) ----------------------------------------------
+from .targets import (
+    SurfaceTargetNode,
+    ElevationTargetNode,
+    OffsetTargetNode,
 )
 
 # --- Typed inputs ------------------------------------------------------------
@@ -62,6 +69,8 @@ __all__ = [
     "PointNode", "LinkNode", "ShapeNode",
     # parameters
     "InputParameterNode", "OutputParameterNode", "TargetParameterNode",
+    # targets
+    "SurfaceTargetNode", "ElevationTargetNode", "OffsetTargetNode",
     # typed inputs
     "IntegerInputNode", "DoubleInputNode", "StringInputNode",
     "GradeInputNode", "SlopeInputNode", "YesNoInputNode",
