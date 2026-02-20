@@ -1,0 +1,124 @@
+"""
+Workflow control nodes: StartNode, DecisionNode, VariableNode, GenericNode.
+"""
+
+from PySide2.QtGui import QColor
+
+from .base import FlowchartNode
+
+
+class StartNode(FlowchartNode):
+    """Entry point of every flowchart; always present and cannot be deleted."""
+
+    def __init__(self, node_id, name="START"):
+        super().__init__(node_id, "Start", name)
+
+    def get_output_ports(self) -> dict:
+        return {'vector': None}
+
+    def get_flowchart_display_text(self):
+        return "START"
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        return QColor(100, 200, 100)
+
+    @classmethod
+    def from_dict(cls, data):
+        node   = cls(data['id'], data.get('name', 'START'))
+        node.x = data.get('x', 0)
+        node.y = data.get('y', 0)
+        return node
+
+
+class DecisionNode(FlowchartNode):
+    """Branching node that evaluates a condition string."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Decision", name)
+        self.condition = ""
+
+    def get_input_ports(self) -> dict:
+        return {'condition': 'string'}
+
+    def get_output_ports(self) -> dict:
+        return {}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        return QColor(255, 200, 100)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d['condition'] = self.condition
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node           = cls(data['id'], data['name'])
+        node.x         = data.get('x', 0)
+        node.y         = data.get('y', 0)
+        node.condition = data.get('condition', '')
+        return node
+
+
+class VariableNode(FlowchartNode):
+    """Stores a named variable computed from an expression."""
+
+    def __init__(self, node_id, name=""):
+        super().__init__(node_id, "Variable", name)
+        self.variable_name = ""
+        self.expression    = ""
+
+    def get_input_ports(self) -> dict:
+        return {'variable_name': 'string', 'expression': 'string'}
+
+    def get_output_ports(self) -> dict:
+        return {'value': 'float'}
+
+    def get_port_value(self, port_name):
+        return getattr(self, port_name, None)
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        return QColor(200, 200, 255)
+
+    def to_dict(self):
+        d = super().to_dict()
+        d.update({'variable_name': self.variable_name,
+                  'expression':    self.expression})
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        node               = cls(data['id'], data['name'])
+        node.x             = data.get('x', 0)
+        node.y             = data.get('y', 0)
+        node.variable_name = data.get('variable_name', '')
+        node.expression    = data.get('expression', '')
+        return node
+
+
+class GenericNode(FlowchartNode):
+    """Fallback node for unknown or future node types."""
+
+    def __init__(self, node_id, node_type, name=""):
+        super().__init__(node_id, node_type, name)
+
+    def get_input_ports(self)  -> dict: return {}
+    def get_output_ports(self) -> dict: return {}
+
+    def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        return []
+
+    def get_preview_display_color(self):
+        return QColor(150, 150, 150)
