@@ -7,7 +7,7 @@ from PySide2.QtWidgets import (
     QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
     QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
 )
-from PySide2.QtCore import Qt, Signal, QPointF, QSize,QTimer,QRectF
+from PySide2.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen
 
 
@@ -545,18 +545,54 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.scene().handle_port_click(self, port_name)
 
     def _on_value_changed(self, port_name, value):
-        if hasattr(self.node, port_name):
-            if port_name in ('point_codes', 'link_codes') and isinstance(value, str):
-                codes_list = [code.strip() for code in value.split(',') if code.strip()]
-                setattr(self.node, port_name, codes_list)
-            else:
-                setattr(self.node, port_name, value)
+        """
+        Called by every port editor widget.  Records a ChangeValueCommand so
+        the change can be undone with Ctrl+Z.
+        """
+        node = self.node
 
-        if port_name in ('rise', 'run') and hasattr(self.node, 'percent'):
+        # Capture the old value before mutation
+        if port_name in ('point_codes', 'link_codes'):
+            old_raw = getattr(node, port_name, [])
+            old_value = ', '.join(old_raw) if isinstance(old_raw, list) else old_raw
+        else:
+            old_value = getattr(node, port_name, None)
+
+        # Skip recording if nothing actually changed
+        if old_value == value:
+            self._apply_value(port_name, value)
+            return
+
+        sc = self.scene()
+        if sc and hasattr(sc, 'undo_stack'):
+            from .undo_stack import ChangeValueCommand
+            cmd = ChangeValueCommand(sc, self, port_name, old_value, value)
+            # We push via _push_silent so the widget doesn't re-fire;
+            # the value is applied inside _apply_value below.
+            sc.undo_stack._stack = sc.undo_stack._stack[
+                :sc.undo_stack._index + 1
+            ]
+            sc.undo_stack._stack.append(cmd)
+            sc.undo_stack._index = len(sc.undo_stack._stack) - 1
+
+        self._apply_value(port_name, value)
+
+    def _apply_value(self, port_name, value):
+        """Apply a value change to the node model and refresh dependent UI."""
+        node = self.node
+
+        if port_name in ('point_codes', 'link_codes') and isinstance(value, str):
+            codes_list = [code.strip() for code in value.split(',') if code.strip()]
+            setattr(node, port_name, codes_list)
+        else:
+            if hasattr(node, port_name):
+                setattr(node, port_name, value)
+
+        if port_name in ('rise', 'run') and hasattr(node, 'percent'):
             percent_row = self.ports.get('percent')
             if percent_row and percent_row._editor is not None:
                 percent_row._editor.blockSignals(True)
-                percent_row._editor.setValue(self.node.percent)
+                percent_row._editor.setValue(node.percent)
                 percent_row._editor.blockSignals(False)
 
         structural_ports = (
@@ -573,6 +609,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.scene().request_preview_update()
 
     def edit_name(self):
+        self._pending_rename_old = self.node.name
         self._header_label.hide()
         self._name_edit.setText(self.node.name)
         self._name_edit.show()
@@ -580,12 +617,35 @@ class FlowchartNodeItem(QGraphicsRectItem):
         self._name_edit.selectAll()
 
     def _finish_rename(self):
-        name = self._name_edit.text().strip()
-        if name:
-            self.node.name = name
-            self._header_label.setText(f"{self.node.type}  ·  {name}")
+        new_name = self._name_edit.text().strip()
         self._name_edit.hide()
         self._header_label.show()
+
+        if not new_name:
+            return
+
+        old_name = getattr(self, '_pending_rename_old', self.node.name)
+        if new_name == old_name:
+            return
+
+        sc = self.scene()
+        if sc and hasattr(sc, 'undo_stack'):
+            from .undo_stack import RenameNodeCommand
+            cmd = RenameNodeCommand(sc, self, old_name, new_name)
+            # Apply directly then record silently (same pattern as _on_value_changed)
+            self.node.name = new_name
+            self._header_label.setText(f"{self.node.type}  ·  {new_name}")
+            sc.undo_stack._stack = sc.undo_stack._stack[
+                :sc.undo_stack._index + 1
+            ]
+            sc.undo_stack._stack.append(cmd)
+            sc.undo_stack._index = len(sc.undo_stack._stack) - 1
+            sc.request_preview_update()
+        else:
+            # Fallback if no scene / undo stack available
+            self.node.name = new_name
+            self._header_label.setText(f"{self.node.type}  ·  {new_name}")
+
         self.update_size()
         if self.scene():
             self.scene().request_preview_update()

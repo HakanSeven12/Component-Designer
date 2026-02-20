@@ -116,6 +116,15 @@ class ComponentDesigner(QMainWindow):
         self.exit_action = QAction("Exit", self)
         self.exit_action.triggered.connect(self.close)
 
+        # Undo / Redo
+        self.undo_action = QAction("Undo", self)
+        self.undo_action.setShortcut("Ctrl+Z")
+        self.undo_action.triggered.connect(self.do_undo)
+
+        self.redo_action = QAction("Redo", self)
+        self.redo_action.setShortcut("Ctrl+Y")
+        self.redo_action.triggered.connect(self.do_redo)
+
         self.restore_layout_action = QAction("Restore Default Layout", self)
         self.restore_layout_action.triggered.connect(self.restore_default_layout)
 
@@ -133,6 +142,12 @@ class ComponentDesigner(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
+        # Edit menu with Undo / Redo
+        edit_menu = menubar.addMenu("Edit")
+        edit_menu.addAction(self.undo_action)
+        edit_menu.addAction(self.redo_action)
+        edit_menu.aboutToShow.connect(self._refresh_edit_menu)
+
         view_menu = menubar.addMenu("View")
         view_menu.addAction(self.restore_layout_action)
 
@@ -141,12 +156,32 @@ class ComponentDesigner(QMainWindow):
         help_menu = menubar.addMenu("Help")
         help_menu.addAction(self.about_action)
 
+    def _refresh_edit_menu(self):
+        """Update Undo/Redo labels with the description of the next action."""
+        stack = self.flowchart.undo_stack
+        if stack.can_undo():
+            self.undo_action.setText(f"Undo: {stack.undo_description}")
+            self.undo_action.setEnabled(True)
+        else:
+            self.undo_action.setText("Undo")
+            self.undo_action.setEnabled(False)
+
+        if stack.can_redo():
+            self.redo_action.setText(f"Redo: {stack.redo_description}")
+            self.redo_action.setEnabled(True)
+        else:
+            self.redo_action.setText("Redo")
+            self.redo_action.setEnabled(False)
+
     def create_toolbars(self):
         toolbar = QToolBar("Main Tools")
         self.addToolBar(toolbar)
         toolbar.addAction(self.new_action)
         toolbar.addAction(self.open_action)
         toolbar.addAction(self.save_action)
+        toolbar.addSeparator()
+        toolbar.addAction(self.undo_action)
+        toolbar.addAction(self.redo_action)
         toolbar.addSeparator()
 
         update_btn = QAction("Update Preview", self)
@@ -159,6 +194,26 @@ class ComponentDesigner(QMainWindow):
         self.show_comments_check.stateChanged.connect(self.toggle_comments)
         self.flowchart.scene.node_selected.connect(self.on_flowchart_node_selected)
         self.flowchart.scene.preview_update_requested.connect(self.update_preview)
+
+    # ------------------------------------------------------------------
+    # Undo / Redo
+    # ------------------------------------------------------------------
+
+    def do_undo(self):
+        desc = self.flowchart.undo_stack.undo()
+        if desc:
+            self.statusBar().showMessage(f"Undo: {desc}", 3000)
+            self.modified = True
+            self.update_preview()
+
+    def do_redo(self):
+        desc = self.flowchart.undo_stack.redo()
+        if desc:
+            self.statusBar().showMessage(f"Redo: {desc}", 3000)
+            self.modified = True
+            self.update_preview()
+
+    # ------------------------------------------------------------------
 
     def on_flowchart_node_selected(self, node):
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
@@ -190,7 +245,6 @@ class ComponentDesigner(QMainWindow):
         self.update_preview()
 
     def update_preview(self):
-        # Resolve wire connections: propagate output values to connected input ports
         self._resolve_connections()
         self.preview.update_preview(self.flowchart.scene.nodes)
 
@@ -206,7 +260,6 @@ class ComponentDesigner(QMainWindow):
             from_port = conn.get('from_port', 'vector')
             to_port   = conn.get('to_port',   'reference')
 
-            # Read value from source node's output port
             if hasattr(from_node, 'get_port_value'):
                 value = from_node.get_port_value(from_port)
             else:
@@ -215,12 +268,11 @@ class ComponentDesigner(QMainWindow):
             if value is None:
                 continue
 
-            # Write value into target node's input port
             if hasattr(to_node, 'set_port_value'):
                 to_node.set_port_value(to_port, value)
             elif hasattr(to_node, to_port):
                 setattr(to_node, to_port, value)
-                
+
     def toggle_codes(self, state):
         self.preview.show_codes = (state == Qt.Checked)
         self.update_preview()
@@ -239,6 +291,7 @@ class ComponentDesigner(QMainWindow):
             self.preview.scene.clear()
             self.preview.setup_scene()
             self.flowchart.create_start_node()
+            self.flowchart.undo_stack.clear()   # Reset history on new file
             self.current_file = None
             self.modified     = False
             self.statusBar().showMessage("New component created")
@@ -316,6 +369,7 @@ class ComponentDesigner(QMainWindow):
                         from_port, to_port,
                     )
 
+            self.flowchart.undo_stack.clear()   # Fresh history after load
             self.current_file = filename
             self.modified     = False
             self.statusBar().showMessage(f"Loaded: {filename}")
