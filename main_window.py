@@ -8,7 +8,7 @@ from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QFileDialog, QMessageBox, QComboBox, QCheckBox)
 from PySide2.QtCore import Qt
 
-from .flowchart import FlowchartNodeItem, FlowchartView, _TYPED_INPUT_TYPES
+from .flowchart import FlowchartNodeItem, FlowchartView
 from .preview import GeometryPreview
 from .panels import ToolboxPanel
 from .models import create_node_from_dict
@@ -224,26 +224,7 @@ class ComponentDesigner(QMainWindow):
         self.flowchart.select_node_visually(node)
 
     def add_element_to_flowchart(self, element_type: str):
-        creators = {
-            "Point":    self.flowchart.add_point_node,
-            "Link":     self.flowchart.add_link_node,
-            "Shape":    self.flowchart.add_shape_node,
-            "Decision": self.flowchart.add_decision_node,
-            "Output":   self.flowchart.add_output_parameter_node,
-            "Target":   self.flowchart.add_target_parameter_node,
-            "Surface Target":   self.flowchart.add_surface_target_node,
-            "Elevation Target": self.flowchart.add_elevation_target_node,
-            "Offset Target":    self.flowchart.add_offset_target_node,
-        }
-        fn = creators.get(element_type)
-        if fn:
-            fn()
-        elif element_type in _TYPED_INPUT_TYPES:
-            self.flowchart.add_typed_input_node(element_type)
-        else:
-            x, y = self.flowchart._auto_pos()
-            self.flowchart.create_generic_node_at(element_type, x, y)
-
+        self.flowchart.add_node_by_type(element_type)
         self.modified = True
         self.update_preview()
 

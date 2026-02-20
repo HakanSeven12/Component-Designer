@@ -646,40 +646,12 @@ class FlowchartView(BaseGraphicsView):
         if not event.mimeData().hasText():
             event.ignore()
             return
-
-        etype = event.mimeData().text()
-        pos   = self.mapToScene(event.pos())
-
-        creators = {
-            "Point":    self.create_point_node_at,
-            "Link":     self.create_link_node_at,
-            "Shape":    self.create_shape_node_at,
-            "Decision": self.create_decision_node_at,
-            "Input":    self.create_input_parameter_node_at,
-            "Output":   self.create_output_parameter_node_at,
-            "Target":   self.create_target_parameter_node_at,
-            # Specialised target nodes
-            "Surface Target":   self.create_surface_target_node_at,
-            "Elevation Target": self.create_elevation_target_node_at,
-            "Offset Target":    self.create_offset_target_node_at,
-        }
-        fn = creators.get(etype)
-        if fn:
-            fn(pos.x(), pos.y())
+        pos = self.mapToScene(event.pos())
+        if self.add_node_by_type(event.mimeData().text(), pos.x(), pos.y()):
             event.acceptProposedAction()
-        elif etype in _TYPED_INPUT_TYPES:
-            self.create_typed_input_node_at(etype, pos.x(), pos.y())
-            event.acceptProposedAction()
-        elif etype in ("Variable", "Switch", "Auxiliary Point",
-                       "Auxiliary Line", "Auxiliary Curve",
-                       "Mark Point", "Comment"):
-            self.create_generic_node_at(etype, pos.x(), pos.y())
-            event.acceptProposedAction()
+            self.scene.request_preview_update()
         else:
             event.ignore()
-            return
-        # Notify listeners (e.g. main window) to refresh the preview
-        self.scene.request_preview_update()
 
     # ------------------------------------------------------------------
     # ID / position helpers
@@ -695,8 +667,19 @@ class FlowchartView(BaseGraphicsView):
         return x, y
 
     # ------------------------------------------------------------------
-    # Node creators — all route through AddNodeCommand
+    # Universal node creator
+    #
+    # Every toolbox entry (drop or double-click) goes through
+    # add_node_by_type().  No per-node-type method needed.
+    #
+    # Name prefix: initials of each word in the type string, e.g.
+    #   "Surface Target" → "ST1", "Double Input" → "DI1", "Point" → "P1"
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _name_prefix(node_type: str, counter: int) -> str:
+        initials = "".join(w[0].upper() for w in node_type.split())
+        return f"{initials}{counter}"
 
     def _add_node(self, node, x, y):
         """Push an AddNodeCommand and return the node."""
@@ -704,80 +687,26 @@ class FlowchartView(BaseGraphicsView):
         self.scene.undo_stack.push(cmd)
         return node
 
-    def create_point_node_at(self, x, y):
-        return self._add_node(PointNode(self._next_id(), f"P{self.node_counter}"), x, y)
+    def add_node_by_type(self, node_type: str, x=None, y=None):
+        """
+        Create any node by its type string and add it to the scene.
 
-    def create_link_node_at(self, x, y):
-        return self._add_node(LinkNode(self._next_id(), f"L{self.node_counter}"), x, y)
+        If *x* / *y* are omitted the node is placed at the next
+        auto-layout position.  Returns the new node, or None if the
+        type string is not recognised.
+        """
+        if x is None or y is None:
+            x, y = self._auto_pos()
 
-    def create_shape_node_at(self, x, y):
-        return self._add_node(ShapeNode(self._next_id(), f"S{self.node_counter}"), x, y)
+        node_id = self._next_id()
+        prefix  = self._name_prefix(node_type, self.node_counter)
 
-    def create_decision_node_at(self, x, y):
-        return self._add_node(DecisionNode(self._next_id(), f"D{self.node_counter}"), x, y)
+        # 1. Known registry type → instantiate directly
+        node = create_node_from_type(node_type, node_id, prefix)
 
-    def create_input_parameter_node_at(self, x, y):
-        return self._add_node(InputParameterNode(self._next_id(), f"IP{self.node_counter}"), x, y)
-
-    def create_output_parameter_node_at(self, x, y):
-        return self._add_node(OutputParameterNode(self._next_id(), f"OP{self.node_counter}"), x, y)
-
-    def create_target_parameter_node_at(self, x, y):
-        return self._add_node(TargetParameterNode(self._next_id(), f"TP{self.node_counter}"), x, y)
-
-    def create_typed_input_node_at(self, node_type, x, y):
-        prefix = ''.join(w[0] for w in node_type.split()) + str(self.node_counter)
-        n = create_node_from_type(node_type, self._next_id(), prefix)
-        return self._add_node(n, x, y)
-
-    def create_generic_node_at(self, ntype, x, y):
-        n = GenericNode(self._next_id(), ntype, f"{ntype[0]}{self.node_counter}")
-        return self._add_node(n, x, y)
-
-    def create_surface_target_node_at(self, x, y):
-        n = SurfaceTargetNode(self._next_id(), f"ST{self.node_counter}")
-        return self._add_node(n, x, y)
-
-    def create_elevation_target_node_at(self, x, y):
-        n = ElevationTargetNode(self._next_id(), f"ET{self.node_counter}")
-        return self._add_node(n, x, y)
-
-    def create_offset_target_node_at(self, x, y):
-        n = OffsetTargetNode(self._next_id(), f"OT{self.node_counter}")
-        return self._add_node(n, x, y)
-
-    def add_surface_target_node(self):
-        return self.create_surface_target_node_at(*self._auto_pos())
-
-    def add_elevation_target_node(self):
-        return self.create_elevation_target_node_at(*self._auto_pos())
-
-    def add_offset_target_node(self):
-        return self.create_offset_target_node_at(*self._auto_pos())
-
-    def add_point_node(self):
-        return self.create_point_node_at(*self._auto_pos())
-
-    def add_link_node(self):
-        return self.create_link_node_at(*self._auto_pos())
-
-    def add_shape_node(self):
-        return self.create_shape_node_at(*self._auto_pos())
-
-    def add_decision_node(self):
-        return self.create_decision_node_at(*self._auto_pos())
-
-    def add_input_parameter_node(self):
-        return self.create_input_parameter_node_at(*self._auto_pos())
-
-    def add_output_parameter_node(self):
-        return self.create_output_parameter_node_at(*self._auto_pos())
-
-    def add_target_parameter_node(self):
-        return self.create_target_parameter_node_at(*self._auto_pos())
-
-    def add_typed_input_node(self, node_type):
-        return self.create_typed_input_node_at(node_type, *self._auto_pos())
+        # create_node_from_type falls back to GenericNode for unknown types,
+        # so every string is handled — nothing extra needed.
+        return self._add_node(node, x, y)
 
     def get_next_node_id(self):
         return self._next_id()
