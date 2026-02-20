@@ -216,9 +216,11 @@ class GeometryPreview(BaseGraphicsView):
         event.accept()
 
     def _rescale_text_items(self):
+        # Compute current view scale from the transform matrix
+        scale = self.transform().m11()
         for item in self.scene.items():
             if isinstance(item, PreviewTextItem):
-                item.apply_scale(self._current_scale)
+                item.apply_scale(scale)
 
     def on_node_clicked(self, node):
         widget = self.parentWidget()
@@ -238,7 +240,6 @@ class GeometryPreview(BaseGraphicsView):
                 item.set_selected_style(item.node == node)
 
     def setup_scene(self):
-        self.scene.setSceneRect(-300, -300, 600, 600)
         self.draw_grid()
         self.draw_axes()
 

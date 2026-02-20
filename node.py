@@ -665,10 +665,3 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
     def mouseDoubleClickEvent(self, event):
         self.edit_name()
-
-    def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
-            if self.scene() and self.scene().delete_selected_node():
-                event.accept()
-                return
-        super().keyPressEvent(event)

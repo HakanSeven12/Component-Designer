@@ -76,8 +76,10 @@ class BaseGraphicsView(QGraphicsView):
 
             new_view_pos = self.mapFromScene(scene_pos)
             delta = new_view_pos - event.pos()
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + delta.x())
-            self.verticalScrollBar().setValue(self.verticalScrollBar().value() + delta.y())
+            self.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value() + delta.x())
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() + delta.y())
             event.accept()
 
     def restore_drag_mode(self):
