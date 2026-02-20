@@ -28,7 +28,7 @@ class SurfaceTargetNode(FlowchartNode):
         self.preview_value = 0.0
 
     def get_input_ports(self) -> dict:
-        return {"preview_value": "float"}
+        return {}
 
     def get_output_ports(self) -> dict:
         return {"preview_value": "float"}
@@ -71,7 +71,7 @@ class ElevationTargetNode(FlowchartNode):
         self.preview_value = 0.0
 
     def get_input_ports(self) -> dict:
-        return {"preview_value": "float"}
+        return {}
 
     def get_output_ports(self) -> dict:
         return {"preview_value": "float"}
@@ -114,7 +114,7 @@ class OffsetTargetNode(FlowchartNode):
         self.preview_value = 0.0
 
     def get_input_ports(self) -> dict:
-        return {"preview_value": "float"}
+        return {}
 
     def get_output_ports(self) -> dict:
         return {"preview_value": "float"}

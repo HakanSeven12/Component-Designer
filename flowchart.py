@@ -677,6 +677,9 @@ class FlowchartView(BaseGraphicsView):
             event.acceptProposedAction()
         else:
             event.ignore()
+            return
+        # Notify listeners (e.g. main window) to refresh the preview
+        self.scene.request_preview_update()
 
     # ------------------------------------------------------------------
     # ID / position helpers
