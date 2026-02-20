@@ -6,6 +6,8 @@ from PySide2.QtWidgets import (QWidget, QVBoxLayout, QApplication,
 from PySide2.QtCore import Qt, Signal, QMimeData
 from PySide2.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
+from .theme_dark import theme
+
 
 class DraggableTreeWidget(QTreeWidget):
 
@@ -38,10 +40,11 @@ class DraggableTreeWidget(QTreeWidget):
         mime.setText(element_type)
 
         pixmap = QPixmap(140, 36)
-        pixmap.fill(QColor(200, 220, 255, 220))
+        pixmap.fill(QColor(38, 45, 65, 230))
         painter = QPainter(pixmap)
-        painter.setPen(QPen(QColor(80, 80, 160), 1))
+        painter.setPen(QPen(QColor(82, 148, 226), 1))
         painter.drawRect(0, 0, 139, 35)
+        painter.setPen(QColor(200, 210, 230))
         painter.drawText(pixmap.rect(), Qt.AlignCenter, element_type)
         painter.end()
 
@@ -71,6 +74,8 @@ class ToolboxPanel(QWidget):
         self.tree = DraggableTreeWidget()
         self.tree.setHeaderLabel("Toolbox")
         self.tree.setIndentation(16)
+        self.tree.setStyleSheet(theme.TOOLBOX_STYLE)
+        self.setStyleSheet("background: #161820;")
 
         # Parameters
         params = QTreeWidgetItem(["Parameters"])
@@ -81,7 +86,7 @@ class ToolboxPanel(QWidget):
             params.addChild(child)
         self.tree.addTopLevelItem(params)
 
-        # Targets (new specialised nodes)
+        # Targets
         targets = QTreeWidgetItem(["Targets"])
         targets.setFlags(targets.flags() & ~Qt.ItemIsDragEnabled)
         for label in _TARGET_TYPES:

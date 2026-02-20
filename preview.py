@@ -28,18 +28,19 @@ from PySide2.QtGui   import (
 
 from .models import PointNode, LinkNode
 from .base_graphics_view import BaseGraphicsView
+from .theme_dark import theme
 
 
 BASE_FONT_NODE_LABEL = 9
 BASE_FONT_CODE_LABEL = 7
 BASE_FONT_ORIGIN     = 8
 
-_AXIS_PEN_COLOR  = QColor(130, 130, 130)
+_AXIS_PEN_COLOR  = theme.AXIS_COLOR
 _AXIS_PEN_WIDTH  = 1.5
-_SURFACE_COLOR   = QColor(0, 180, 60)
+_SURFACE_COLOR   = theme.SURFACE_COLOR
 _SURFACE_DASH    = [10, 6]
-_ELEV_COLOR      = QColor(220, 60, 20)
-_OFFSET_COLOR    = QColor(20, 80, 220)
+_ELEV_COLOR      = theme.ELEVATION_COLOR
+_OFFSET_COLOR    = theme.OFFSET_COLOR
 _ARROW_HEAD      = 10
 _ARROW_SHAFT     = 28
 _LABEL_PAD       = 6
@@ -62,7 +63,7 @@ class PreviewTextItem(QGraphicsTextItem):
         self.setFlags(QGraphicsItem.ItemIsSelectable)
         self.setData(0, node)
         self.normal_color   = self.defaultTextColor()
-        self.selected_color = QColor(255, 120, 0)
+        self.selected_color = theme.POINT_SEL_PEN
 
         f = QFont()
         f.setPointSizeF(base_font_size)
@@ -100,10 +101,10 @@ class PreviewPointItem(QGraphicsEllipseItem):
         self.node = node
         self.setFlags(QGraphicsItem.ItemIsSelectable)
         self.setData(0, node)
-        self.normal_pen     = QPen(Qt.black, 1)
-        self.normal_brush   = QBrush(QColor(0, 120, 255))
-        self.selected_pen   = QPen(QColor(255, 120, 0), 3)
-        self.selected_brush = QBrush(QColor(255, 200, 100))
+        self.normal_pen     = QPen(theme.POINT_NORMAL_PEN, 1)
+        self.normal_brush   = QBrush(theme.POINT_NORMAL_FILL)
+        self.selected_pen   = QPen(theme.POINT_SEL_PEN, 3)
+        self.selected_brush = QBrush(theme.POINT_SEL_FILL)
         self.setPen(self.normal_pen)
         self.setBrush(self.normal_brush)
 
@@ -130,8 +131,8 @@ class PreviewLineItem(QGraphicsLineItem):
         self.node = node
         self.setFlags(QGraphicsItem.ItemIsSelectable)
         self.setData(0, node)
-        self.normal_pen   = QPen(QColor(0, 150, 0), 2)
-        self.selected_pen = QPen(QColor(255, 120, 0), 4)
+        self.normal_pen   = QPen(theme.LINK_NORMAL_COLOR, 2)
+        self.selected_pen = QPen(theme.LINK_SEL_COLOR, 4)
         self.setPen(self.normal_pen)
 
     def mousePressEvent(self, event):
@@ -157,11 +158,11 @@ class PreviewLinkLine(QGraphicsLineItem):
         self.setData(0, node)
         self.setZValue(-1)
 
-        pen = QPen(QColor(160, 160, 200), 1)
+        pen = QPen(theme.DASHED_LINK_COLOR, 1)
         pen.setStyle(Qt.DashLine)
         pen.setDashPattern([4, 4])
         self.normal_pen   = pen
-        self.selected_pen = QPen(QColor(255, 160, 60), 2)
+        self.selected_pen = QPen(theme.DASHED_SEL_COLOR, 2)
         self.selected_pen.setStyle(Qt.DashLine)
         self.selected_pen.setDashPattern([4, 4])
         self.setPen(self.normal_pen)
@@ -236,7 +237,7 @@ def _draw_arrow_down(p, tip_x, tip_y, color, selected=False):
 
 
 def _draw_label(p, text, x, y, color, align_right=False, align_bottom=False):
-    """Small white-background label clamped inside the viewport."""
+    """Small dark-background label clamped inside the viewport."""
     fm  = QFontMetrics(p.font())
     tw  = fm.horizontalAdvance(text)
     th  = fm.height()
@@ -249,7 +250,7 @@ def _draw_label(p, text, x, y, color, align_right=False, align_bottom=False):
     ry  = max(2.0, min(float(ry), vp.height() - th - pad - 2))
 
     p.setPen(Qt.NoPen)
-    p.setBrush(QBrush(QColor(255, 255, 255, 200)))
+    p.setBrush(QBrush(QColor(18, 20, 26, 210)))
     p.drawRoundedRect(QRectF(rx - pad, ry - pad, tw + pad*2, th + pad*2), 3, 3)
     p.setPen(color)
     p.setBrush(Qt.NoBrush)
@@ -277,8 +278,10 @@ class GeometryPreview(BaseGraphicsView):
         self.points = []
         self.links  = []
 
-        # [{type, value, name, selected}, ...]
         self._target_overlays = []
+
+        self.setBackgroundBrush(QBrush(theme.PREVIEW_BG))
+        self.setStyleSheet(theme.SCROLLBAR_STYLE)
 
         self.setup_scene()
         self._pscene.node_clicked.connect(self.on_node_clicked)
@@ -337,7 +340,7 @@ class GeometryPreview(BaseGraphicsView):
         pass  # No grid, no static axes — all drawn in drawForeground
 
     # ------------------------------------------------------------------
-    # Coordinate helpers (scene → viewport pixels)
+    # Coordinate helpers
     # ------------------------------------------------------------------
 
     def _origin_vp(self):
@@ -363,10 +366,8 @@ class GeometryPreview(BaseGraphicsView):
         vp_w = self.viewport().width()
         vp_h = self.viewport().height()
 
-        # 1. Axes
         self._draw_axes_fg(painter, vp_w, vp_h)
 
-        # 2. Target overlays
         for ov in self._target_overlays:
             t, val, name, sel = ov['type'], ov['value'], ov['name'], ov.get('selected', False)
             if t == 'surface':
@@ -384,9 +385,7 @@ class GeometryPreview(BaseGraphicsView):
         pen.setCosmetic(True)
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
-        # Horizontal axis
         p.drawLine(0, int(oy), vp_w, int(oy))
-        # Vertical axis
         p.drawLine(int(ox), 0, int(ox), vp_h)
 
     def _draw_surface_fg(self, p, value, name, selected, vp_w, vp_h):

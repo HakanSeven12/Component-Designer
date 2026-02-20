@@ -9,6 +9,7 @@ from .models import *
 from .models.targets import SurfaceTargetNode, ElevationTargetNode, OffsetTargetNode
 from .base_graphics_view import BaseGraphicsView
 from .node import FlowchartNodeItem
+from .theme_dark import theme
 from .undo_stack import (
     UndoStack,
     AddNodeCommand,
@@ -30,7 +31,7 @@ class ConnectionWire(QGraphicsPathItem):
         self.from_port = None
         self.to_port   = None
 
-        pen = QPen(QColor(100, 100, 100), 2)
+        pen = QPen(theme.WIRE_COLOR, 2)
         pen.setCapStyle(Qt.RoundCap)
         self.setPen(pen)
         self.update_path()
@@ -67,7 +68,6 @@ class FlowchartScene(QGraphicsScene):
         self.connection_start_port  = None
         self.temp_wire              = None
 
-        # Shared undo stack — also accessible from FlowchartView
         self.undo_stack = UndoStack(max_depth=100)
 
     # ------------------------------------------------------------------
@@ -103,7 +103,6 @@ class FlowchartScene(QGraphicsScene):
 
         if not self.connection_in_progress:
             if is_in and self._is_port_connected(node_item, port_name):
-                # Find the wire so we can record it for undo
                 wire_data = next(
                     (w for w in self.port_wires
                      if w['to_item'] is node_item and w['to_port'] == port_name),
@@ -115,7 +114,6 @@ class FlowchartScene(QGraphicsScene):
                         wire_data['from_item'], wire_data['from_port'],
                         node_item, port_name,
                     )
-                    # redo() calls _disconnect_input_port internally
                     self.undo_stack.push(cmd)
                 else:
                     self._disconnect_input_port(node_item, port_name)
@@ -127,7 +125,6 @@ class FlowchartScene(QGraphicsScene):
                 if self.can_connect(self.connection_start_item,
                                     self.connection_start_port,
                                     node_item, port_name):
-                    # Remove temp wire before recording the command
                     if self.temp_wire:
                         self.removeItem(self.temp_wire)
                         self.temp_wire = None
@@ -142,7 +139,6 @@ class FlowchartScene(QGraphicsScene):
                     saved_start_port = self.connection_start_port
                     self.connection_start_item = None
                     self.connection_start_port = None
-                    # redo() calls connect_nodes_with_wire
                     self.undo_stack.push(cmd)
                 else:
                     self._cancel_connection()
@@ -154,11 +150,6 @@ class FlowchartScene(QGraphicsScene):
     # ------------------------------------------------------------------
 
     def _disconnect_input_port(self, node_item, port_name, record_undo=True):
-        """
-        Remove the wire connected to *port_name* on *node_item*.
-        Pass record_undo=False when called from within a Command to avoid
-        double-recording.
-        """
         if record_undo:
             wire_data = next(
                 (w for w in self.port_wires
@@ -299,11 +290,6 @@ class FlowchartScene(QGraphicsScene):
     # ------------------------------------------------------------------
 
     def add_flowchart_node(self, node, x, y):
-        """
-        Low-level method: create and add a FlowchartNodeItem to the scene.
-        Called by AddNodeCommand.redo() and directly during file load.
-        Does NOT push to the undo stack.
-        """
         self.nodes[node.id] = node
         node.x = x
         node.y = y
@@ -312,20 +298,15 @@ class FlowchartScene(QGraphicsScene):
         return item
 
     def _remove_node_item(self, item, record_undo=True):
-        """
-        Low-level removal used by DeleteNodeCommand and delete_selected_node.
-        Pass record_undo=False when called from within a Command.
-        """
         node = item.node
         if isinstance(node, StartNode):
             return False
 
         if record_undo:
             cmd = DeleteNodeCommand(self, item)
-            self.undo_stack.push(cmd)   # redo() calls _remove_node_item(record_undo=False)
+            self.undo_stack.push(cmd)
             return True
 
-        # Actual removal
         for w in [d for d in self.port_wires
                   if d['from_item'] is item or d['to_item'] is item]:
             self.removeItem(w['wire'])
@@ -364,10 +345,6 @@ class FlowchartScene(QGraphicsScene):
 
     def connect_nodes_with_wire(self, from_node, to_node,
                                 from_port='vector', to_port='reference'):
-        """
-        Public helper used by AddConnectionCommand.redo() and file-load.
-        Does NOT push to the undo stack.
-        """
         from_item = to_item = None
         for i in self.items():
             if isinstance(i, FlowchartNodeItem):
@@ -381,7 +358,6 @@ class FlowchartScene(QGraphicsScene):
         if from_port not in from_item.ports or to_port not in to_item.ports:
             return
 
-        # Remove any existing wire on this input port first
         stale = [w for w in self.port_wires
                  if w['to_item'] is to_item and w['to_port'] == to_port]
         for w in stale:
@@ -446,11 +422,11 @@ class FlowchartView(BaseGraphicsView):
         self.node_counter    = 0
         self._clipboard_node = None
 
-        # Track drag-start positions for move commands
         self._drag_start_positions: dict = {}
 
         self.scene.node_selected.connect(self.on_node_selected)
-        self.setBackgroundBrush(QBrush(QColor(240, 240, 245)))
+        self.setBackgroundBrush(QBrush(theme.CANVAS_BG))
+        self.setStyleSheet(theme.SCROLLBAR_STYLE)
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.create_start_node()
 
@@ -467,19 +443,16 @@ class FlowchartView(BaseGraphicsView):
     # ------------------------------------------------------------------
 
     def keyPressEvent(self, event):
-        # Cancel wire drawing on Escape
         if event.key() == Qt.Key_Escape and self.scene.connection_in_progress:
             self.scene._cancel_connection()
             event.accept()
             return
 
-        # Delete / Backspace → delete selected node (recorded in undo stack)
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             if self.scene.delete_selected_node():
                 event.accept()
                 return
 
-        # Ctrl+Z → undo
         if event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
             if not (event.modifiers() & Qt.ShiftModifier):
                 desc = self.scene.undo_stack.undo()
@@ -488,7 +461,6 @@ class FlowchartView(BaseGraphicsView):
                 event.accept()
                 return
 
-        # Ctrl+Y or Ctrl+Shift+Z → redo
         if (event.key() == Qt.Key_Y and event.modifiers() & Qt.ControlModifier) or \
            (event.key() == Qt.Key_Z and
             event.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier)):
@@ -498,7 +470,6 @@ class FlowchartView(BaseGraphicsView):
             event.accept()
             return
 
-        # Ctrl+C → copy selected node
         if event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier:
             selected = [i for i in self.scene.selectedItems()
                         if isinstance(i, FlowchartNodeItem)]
@@ -507,7 +478,6 @@ class FlowchartView(BaseGraphicsView):
             event.accept()
             return
 
-        # Ctrl+V → paste copied node (recorded as AddNode)
         if event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier:
             if self._clipboard_node is not None:
                 self._paste_node()
@@ -517,7 +487,6 @@ class FlowchartView(BaseGraphicsView):
         super().keyPressEvent(event)
 
     def _emit_status(self, msg: str):
-        """Bubble a status message up to the main window if available."""
         widget = self.parentWidget()
         while widget:
             if hasattr(widget, 'statusBar'):
@@ -526,7 +495,7 @@ class FlowchartView(BaseGraphicsView):
             widget = widget.parentWidget()
 
     # ------------------------------------------------------------------
-    # Drag tracking (for MoveNodeCommand) + rubber-band selection
+    # Drag tracking
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event):
@@ -536,22 +505,18 @@ class FlowchartView(BaseGraphicsView):
                 item_under is not None and
                 isinstance(item_under.parentItem(), FlowchartNodeItem)
             ):
-                # Clicking ON a node: switch to NoDrag so the item can
-                # move freely, and record positions for MoveNodeCommand.
                 self.setDragMode(QGraphicsView.NoDrag)
                 self._drag_start_positions = {
                     item: item.pos()
                     for item in self.scene.selectedItems()
                     if isinstance(item, FlowchartNodeItem)
                 }
-                # Also include the clicked item in case it wasn't selected yet
                 if isinstance(item_under, FlowchartNodeItem):
                     self._drag_start_positions.setdefault(item_under, item_under.pos())
                 elif isinstance(item_under.parentItem(), FlowchartNodeItem):
                     ni = item_under.parentItem()
                     self._drag_start_positions.setdefault(ni, ni.pos())
             else:
-                # Clicking on empty space: rubber-band selection
                 self.setDragMode(QGraphicsView.RubberBandDrag)
                 self._drag_start_positions = {}
         super().mousePressEvent(event)
@@ -564,7 +529,6 @@ class FlowchartView(BaseGraphicsView):
                     new_pos = item.pos()
                     if (new_pos - old_pos).manhattanLength() > 1:
                         cmd = MoveNodeCommand(self.scene, item, old_pos, new_pos)
-                        # Push silently — item already moved, skip redo()
                         self.scene.undo_stack._stack = \
                             self.scene.undo_stack._stack[
                                 :self.scene.undo_stack._index + 1
@@ -573,8 +537,6 @@ class FlowchartView(BaseGraphicsView):
                         self.scene.undo_stack._index = \
                             len(self.scene.undo_stack._stack) - 1
                 self._drag_start_positions = {}
-            # Always restore to RubberBandDrag after release so the next
-            # empty-space click still triggers selection box.
             self.setDragMode(QGraphicsView.RubberBandDrag)
 
     # ------------------------------------------------------------------
@@ -582,7 +544,6 @@ class FlowchartView(BaseGraphicsView):
     # ------------------------------------------------------------------
 
     def _paste_node(self):
-        """Paste a copy of the clipboard node offset by 30 px, with undo."""
         src  = self._clipboard_node
         data = src.to_dict()
 
@@ -620,11 +581,9 @@ class FlowchartView(BaseGraphicsView):
                     self.centerOn(item)
 
     def restore_drag_mode(self):
-        # After middle-mouse pan ends, go back to rubber-band selection
         self.setDragMode(QGraphicsView.RubberBandDrag)
 
     def create_start_node(self):
-        # Start node is added directly (not via undo stack)
         self.scene.add_flowchart_node(StartNode("START", "START"), 50, 50)
 
     def on_node_selected(self, node):
@@ -667,13 +626,7 @@ class FlowchartView(BaseGraphicsView):
         return x, y
 
     # ------------------------------------------------------------------
-    # Universal node creator
-    #
-    # Every toolbox entry (drop or double-click) goes through
-    # add_node_by_type().  No per-node-type method needed.
-    #
-    # Name prefix: initials of each word in the type string, e.g.
-    #   "Surface Target" → "ST1", "Double Input" → "DI1", "Point" → "P1"
+    # Node creators
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -682,7 +635,6 @@ class FlowchartView(BaseGraphicsView):
         return f"{initials}{counter}"
 
     def _add_node(self, node, x, y):
-        """Push an AddNodeCommand and return the node."""
         cmd = AddNodeCommand(self.scene, node, x, y)
         self.scene.undo_stack.push(cmd)
         return node

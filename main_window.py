@@ -5,13 +5,15 @@ import json
 import traceback
 from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QSplitter, QAction, QToolBar,
-                               QFileDialog, QMessageBox, QComboBox, QCheckBox)
+                               QFileDialog, QMessageBox, QComboBox, QCheckBox,
+                               QApplication)
 from PySide2.QtCore import Qt
 
-from .flowchart import FlowchartNodeItem, FlowchartView
+from .flowchart import FlowchartNodeItem, FlowchartView, _TYPED_INPUT_TYPES
 from .preview import GeometryPreview
 from .panels import ToolboxPanel
 from .models import create_node_from_dict
+from .theme_dark import theme
 
 
 class ComponentDesigner(QMainWindow):
@@ -21,6 +23,9 @@ class ComponentDesigner(QMainWindow):
         self.setWindowTitle("Component Designer - FreeCAD Road Workbench")
         self.current_file = None
         self.modified     = False
+
+        # Apply dark palette to the entire application
+        theme.apply_palette(QApplication.instance())
 
         self.setup_ui()
         self.create_actions()
@@ -40,30 +45,35 @@ class ComponentDesigner(QMainWindow):
 
         center_splitter = QSplitter(Qt.Vertical)
 
+        # ── Flowchart panel ──────────────────────────────────────────────────
         flowchart_container = QWidget()
         flowchart_layout    = QVBoxLayout()
         flowchart_label     = QLabel("Flowchart")
-        flowchart_label.setStyleSheet(
-            "font-weight: bold; background: #e0e0e0; padding: 5px;")
+        flowchart_label.setStyleSheet(theme.PANEL_LABEL_STYLE)
         self.flowchart = FlowchartView()
         flowchart_layout.addWidget(flowchart_label)
         flowchart_layout.addWidget(self.flowchart)
         flowchart_layout.setContentsMargins(0, 0, 0, 0)
         flowchart_container.setLayout(flowchart_layout)
 
+        # ── Preview panel ────────────────────────────────────────────────────
         preview_container = QWidget()
         preview_layout    = QVBoxLayout()
         preview_header    = QHBoxLayout()
 
         preview_label = QLabel("Preview")
-        preview_label.setStyleSheet(
-            "font-weight: bold; background: #e0e0e0; padding: 5px;")
+        preview_label.setStyleSheet(theme.PREVIEW_LABEL_STYLE)
 
         self.preview_mode_combo = QComboBox()
         self.preview_mode_combo.addItems(["Layout Mode", "Roadway Mode"])
+        self.preview_mode_combo.setStyleSheet(theme.PREVIEW_COMBO_STYLE)
+
         self.show_codes_check    = QCheckBox("Codes")
         self.show_codes_check.setChecked(True)
+        self.show_codes_check.setStyleSheet(theme.PREVIEW_CHECKBOX_STYLE)
+
         self.show_comments_check = QCheckBox("Comments")
+        self.show_comments_check.setStyleSheet(theme.PREVIEW_CHECKBOX_STYLE)
 
         preview_header.addWidget(preview_label)
         preview_header.addStretch()
@@ -74,7 +84,12 @@ class ComponentDesigner(QMainWindow):
 
         preview_header_widget = QWidget()
         preview_header_widget.setLayout(preview_header)
-        preview_header_widget.setStyleSheet("background: #e0e0e0;")
+        preview_header_widget.setStyleSheet(theme.PREVIEW_HEADER_STYLE)
+
+        # Style the "Mode:" label inside the header
+        for child in preview_header_widget.findChildren(QLabel):
+            if child is not preview_label:
+                child.setStyleSheet("color: #8a98b0; font-size: 8pt; background: transparent;")
 
         self.preview = GeometryPreview()
         preview_layout.addWidget(preview_header_widget)
@@ -94,6 +109,15 @@ class ComponentDesigner(QMainWindow):
         main_layout.addWidget(main_splitter)
         central.setLayout(main_layout)
         self.setCentralWidget(central)
+
+        # Apply global window stylesheet
+        self.setStyleSheet(
+            theme.MENUBAR_STYLE +
+            theme.TOOLBAR_STYLE +
+            theme.STATUSBAR_STYLE +
+            theme.SPLITTER_STYLE
+        )
+
         self.statusBar().showMessage("Ready")
 
     def create_actions(self):
@@ -116,7 +140,6 @@ class ComponentDesigner(QMainWindow):
         self.exit_action = QAction("Exit", self)
         self.exit_action.triggered.connect(self.close)
 
-        # Undo / Redo
         self.undo_action = QAction("Undo", self)
         self.undo_action.setShortcut("Ctrl+Z")
         self.undo_action.triggered.connect(self.do_undo)
@@ -142,7 +165,6 @@ class ComponentDesigner(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
-        # Edit menu with Undo / Redo
         edit_menu = menubar.addMenu("Edit")
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
@@ -157,7 +179,6 @@ class ComponentDesigner(QMainWindow):
         help_menu.addAction(self.about_action)
 
     def _refresh_edit_menu(self):
-        """Update Undo/Redo labels with the description of the next action."""
         stack = self.flowchart.undo_stack
         if stack.can_undo():
             self.undo_action.setText(f"Undo: {stack.undo_description}")
@@ -275,7 +296,7 @@ class ComponentDesigner(QMainWindow):
             self.preview.scene.clear()
             self.preview.setup_scene()
             self.flowchart.create_start_node()
-            self.flowchart.undo_stack.clear()   # Reset history on new file
+            self.flowchart.undo_stack.clear()
             self.current_file = None
             self.modified     = False
             self.statusBar().showMessage("New component created")
@@ -353,7 +374,7 @@ class ComponentDesigner(QMainWindow):
                         from_port, to_port,
                     )
 
-            self.flowchart.undo_stack.clear()   # Fresh history after load
+            self.flowchart.undo_stack.clear()
             self.current_file = filename
             self.modified     = False
             self.statusBar().showMessage(f"Loaded: {filename}")

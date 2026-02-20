@@ -10,20 +10,26 @@ from PySide2.QtWidgets import (
 from PySide2.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen
 
+from .theme_dark import theme
 
-INPUT_COLOR        = QColor(255, 150,  50)
-OUTPUT_COLOR       = QColor(100, 200, 100)
-HEADER_BG          = QColor( 70, 130, 180)
-HEADER_BG_SELECTED = QColor(255, 140,   0)
-BODY_BG            = QColor(248, 248, 252)
-BORDER_NORMAL      = QColor( 60,  60,  60)
-BORDER_SELECTED    = QColor(255, 120,   0)
-SHADOW_COLOR       = QColor(  0,   0,   0, 30)
-GLOW_COLOR         = QColor(255, 120,   0, 80)
+INPUT_COLOR        = theme.INPUT_PORT_COLOR
+OUTPUT_COLOR       = theme.OUTPUT_PORT_COLOR
+HEADER_BG          = theme.HEADER_BG
+HEADER_BG_SELECTED = theme.HEADER_BG_SELECTED
+BODY_BG            = theme.NODE_BODY_BG
+BORDER_NORMAL      = theme.NODE_BORDER_NORMAL
+BORDER_SELECTED    = theme.NODE_BORDER_SEL
+SHADOW_COLOR       = theme.NODE_SHADOW
+GLOW_COLOR         = theme.NODE_GLOW
 DOT_RADIUS = 5
 
-ROW_HOVER_INPUT  = QColor(255, 220, 180, 60)
-ROW_HOVER_OUTPUT = QColor(180, 240, 180, 60)
+ROW_HOVER_INPUT  = theme.ROW_HOVER_INPUT
+ROW_HOVER_OUTPUT = theme.ROW_HOVER_OUTPUT
+
+EDITOR_STYLE          = theme.EDITOR_STYLE
+EDITOR_STYLE_DISABLED = theme.EDITOR_STYLE_DISABLED
+COMBO_STYLE           = theme.COMBO_STYLE
+LABEL_STYLE           = theme.LABEL_STYLE
 
 
 class PortDot(QWidget):
@@ -56,43 +62,6 @@ class PortDot(QWidget):
         cx = self.width()  // 2
         cy = self.height() // 2
         p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
-
-
-EDITOR_STYLE = """
-    QDoubleSpinBox, QSpinBox, QLineEdit, QComboBox {
-        background: white; border: 1px solid #c0c0c0;
-        border-radius: 3px; padding: 1px 4px; font-size: 8pt;
-    }
-    QDoubleSpinBox:focus, QSpinBox:focus, QLineEdit:focus, QComboBox:focus {
-        border: 2px solid #4682B4;
-    }
-    QComboBox::drop-down { border: none; width: 18px; }
-    QComboBox::down-arrow {
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 5px solid #555; margin-right: 4px;
-    }
-"""
-
-EDITOR_STYLE_DISABLED = EDITOR_STYLE.replace(
-    "background: white", "background: #e0e0e0"
-)
-
-COMBO_STYLE = """
-    QComboBox {
-        background: white; border: 1px solid #c0c0c0;
-        border-radius: 3px; padding: 2px 4px; font-size: 8pt;
-    }
-    QComboBox:focus { border: 2px solid #4682B4; }
-    QComboBox::drop-down { border: none; width: 18px; }
-    QComboBox::down-arrow {
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 5px solid #555; margin-right: 4px;
-    }
-"""
-
-LABEL_STYLE = "QLabel { font-size: 8pt; color: #444; background: transparent; }"
 
 
 class ComboField(QWidget):
@@ -154,7 +123,7 @@ class PortRow(QWidget):
 
         self._label = QLabel(port_label)
         self._label.setStyleSheet(
-            "QLabel { font-size: 8pt; color: #1a1a1a; background: transparent; }"
+            "QLabel { font-size: 8pt; color: #a0a8b9; background: transparent; }"
         )
         self._label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -232,14 +201,7 @@ class PortRow(QWidget):
             w = QCheckBox()
             w.setChecked(bool(value) if value is not None else False)
             w.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            w.setStyleSheet(
-                "QCheckBox { spacing: 4px; font-size: 8pt; background: transparent; }"
-                "QCheckBox::indicator { width: 14px; height: 14px; }"
-                "QCheckBox::indicator:unchecked { border: 1px solid #aaa;"
-                " border-radius: 2px; background: white; }"
-                "QCheckBox::indicator:checked { border: 1px solid #4682B4;"
-                " border-radius: 2px; background: #4682B4; }"
-            )
+            w.setStyleSheet(theme.CHECKBOX_STYLE)
             w.toggled.connect(lambda v: self.value_changed.emit(self.port_name, v))
             return w
 
@@ -349,21 +311,14 @@ class FlowchartNodeItem(QGraphicsRectItem):
         lay.setContentsMargins(8, 5, 8, 5)
 
         self._header_label = QLabel(f"{self.node.type}  ·  {self.node.name}")
-        self._header_label.setStyleSheet(
-            "QLabel { color: white; font-weight: bold; font-size: 9pt;"
-            " background: transparent; }"
-        )
+        self._header_label.setStyleSheet(theme.HEADER_LABEL_STYLE)
         self._header_label.setAlignment(Qt.AlignCenter)
         self._header_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._header_label.mouseDoubleClickEvent = lambda e: self.edit_name()
 
         self._name_edit = QLineEdit(self.node.name)
         self._name_edit.setAlignment(Qt.AlignCenter)
-        self._name_edit.setStyleSheet(
-            "QLineEdit { color: white; font-weight: bold; font-size: 9pt;"
-            " background: rgba(255,255,255,40); border: 1px solid white;"
-            " border-radius: 3px; padding: 2px; }"
-        )
+        self._name_edit.setStyleSheet(theme.NAME_EDIT_STYLE)
         self._name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._name_edit.hide()
         self._name_edit.returnPressed.connect(self._finish_rename)
@@ -420,7 +375,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
             sep = QWidget()
             sep.setFixedHeight(1)
-            sep.setStyleSheet("background: #d0d0d0;")
+            sep.setStyleSheet(theme.SEPARATOR_STYLE)
             sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             layout.addWidget(sep)
 
@@ -487,7 +442,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
         if has_inputs and has_outputs:
             vdiv = QWidget()
             vdiv.setFixedWidth(1)
-            vdiv.setStyleSheet("background: #c8c8c8;")
+            vdiv.setStyleSheet(theme.VDIVIDER_STYLE)
             vdiv.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
             col_lay.addWidget(vdiv)
             col_lay.addSpacing(4)
@@ -545,20 +500,14 @@ class FlowchartNodeItem(QGraphicsRectItem):
             self.scene().handle_port_click(self, port_name)
 
     def _on_value_changed(self, port_name, value):
-        """
-        Called by every port editor widget.  Records a ChangeValueCommand so
-        the change can be undone with Ctrl+Z.
-        """
         node = self.node
 
-        # Capture the old value before mutation
         if port_name in ('point_codes', 'link_codes'):
             old_raw = getattr(node, port_name, [])
             old_value = ', '.join(old_raw) if isinstance(old_raw, list) else old_raw
         else:
             old_value = getattr(node, port_name, None)
 
-        # Skip recording if nothing actually changed
         if old_value == value:
             self._apply_value(port_name, value)
             return
@@ -567,8 +516,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         if sc and hasattr(sc, 'undo_stack'):
             from .undo_stack import ChangeValueCommand
             cmd = ChangeValueCommand(sc, self, port_name, old_value, value)
-            # We push via _push_silent so the widget doesn't re-fire;
-            # the value is applied inside _apply_value below.
             sc.undo_stack._stack = sc.undo_stack._stack[
                 :sc.undo_stack._index + 1
             ]
@@ -578,7 +525,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         self._apply_value(port_name, value)
 
     def _apply_value(self, port_name, value):
-        """Apply a value change to the node model and refresh dependent UI."""
         node = self.node
 
         if port_name in ('point_codes', 'link_codes') and isinstance(value, str):
@@ -632,7 +578,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         if sc and hasattr(sc, 'undo_stack'):
             from .undo_stack import RenameNodeCommand
             cmd = RenameNodeCommand(sc, self, old_name, new_name)
-            # Apply directly then record silently (same pattern as _on_value_changed)
             self.node.name = new_name
             self._header_label.setText(f"{self.node.type}  ·  {new_name}")
             sc.undo_stack._stack = sc.undo_stack._stack[
@@ -642,7 +587,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
             sc.undo_stack._index = len(sc.undo_stack._stack) - 1
             sc.request_preview_update()
         else:
-            # Fallback if no scene / undo stack available
             self.node.name = new_name
             self._header_label.setText(f"{self.node.type}  ·  {new_name}")
 
