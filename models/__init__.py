@@ -45,6 +45,22 @@ from .typed_inputs import (
     SuperelevationInputNode,
 )
 
+# --- Math nodes --------------------------------------------------------------
+from .math_nodes import (
+    # Arithmetic
+    AddNode, SubtractNode, MultiplyNode, DivideNode, ModuloNode, PowerNode,
+    # Unary
+    AbsNode, NegateNode, SqrtNode, CeilNode, FloorNode, RoundNode,
+    # Trigonometry
+    SinNode, CosNode, TanNode, AsinNode, AcosNode, AtanNode, Atan2Node,
+    # Logarithm / exponential
+    LogNode, Log10Node, ExpNode,
+    # Comparison
+    MinNode, MaxNode, ClampNode,
+    # Utility
+    InterpolateNode, MapRangeNode,
+)
+
 # --- Workflow ----------------------------------------------------------------
 from .workflow import (
     StartNode,
@@ -75,6 +91,14 @@ __all__ = [
     "IntegerInputNode", "DoubleInputNode", "StringInputNode",
     "GradeInputNode", "SlopeInputNode", "YesNoInputNode",
     "SuperelevationInputNode",
+    # math nodes
+    "AddNode", "SubtractNode", "MultiplyNode", "DivideNode",
+    "ModuloNode", "PowerNode",
+    "AbsNode", "NegateNode", "SqrtNode", "CeilNode", "FloorNode", "RoundNode",
+    "SinNode", "CosNode", "TanNode", "AsinNode", "AcosNode", "AtanNode", "Atan2Node",
+    "LogNode", "Log10Node", "ExpNode",
+    "MinNode", "MaxNode", "ClampNode",
+    "InterpolateNode", "MapRangeNode",
     # workflow
     "StartNode", "DecisionNode", "VariableNode", "GenericNode",
     # registry

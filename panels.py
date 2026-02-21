@@ -58,6 +58,14 @@ class DraggableTreeWidget(QTreeWidget):
 # Node types handled by the new specialised target creators
 _TARGET_TYPES = ("Surface Target", "Elevation Target", "Offset Target")
 
+# Math node labels grouped by sub-category for toolbox display
+_MATH_ARITHMETIC   = ("Add", "Subtract", "Multiply", "Divide", "Modulo", "Power")
+_MATH_UNARY        = ("Abs", "Negate", "Sqrt", "Ceil", "Floor", "Round")
+_MATH_TRIG         = ("Sin", "Cos", "Tan", "Asin", "Acos", "Atan", "Atan2")
+_MATH_LOG          = ("Ln", "Log10", "Exp")
+_MATH_COMPARISON   = ("Min", "Max", "Clamp")
+_MATH_UTILITY      = ("Interpolate", "Map Range")
+
 
 class ToolboxPanel(QWidget):
 
@@ -77,7 +85,7 @@ class ToolboxPanel(QWidget):
         self.tree.setStyleSheet(theme.TOOLBOX_STYLE)
         self.setStyleSheet("background: #161820;")
 
-        # Parameters
+        # ── Parameters ──────────────────────────────────────────────────────
         params = QTreeWidgetItem(["Parameters"])
         params.setFlags(params.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Output",):
@@ -86,7 +94,7 @@ class ToolboxPanel(QWidget):
             params.addChild(child)
         self.tree.addTopLevelItem(params)
 
-        # Targets
+        # ── Targets ─────────────────────────────────────────────────────────
         targets = QTreeWidgetItem(["Targets"])
         targets.setFlags(targets.flags() & ~Qt.ItemIsDragEnabled)
         for label in _TARGET_TYPES:
@@ -95,7 +103,7 @@ class ToolboxPanel(QWidget):
             targets.addChild(child)
         self.tree.addTopLevelItem(targets)
 
-        # Typed Inputs
+        # ── Typed Inputs ────────────────────────────────────────────────────
         typed = QTreeWidgetItem(["Typed Inputs"])
         typed.setFlags(typed.flags() & ~Qt.ItemIsDragEnabled)
         for label in (
@@ -112,7 +120,29 @@ class ToolboxPanel(QWidget):
             typed.addChild(child)
         self.tree.addTopLevelItem(typed)
 
-        # Geometry
+        # ── Math ─────────────────────────────────────────────────────────────
+        math_root = QTreeWidgetItem(["Math"])
+        math_root.setFlags(math_root.flags() & ~Qt.ItemIsDragEnabled)
+
+        def _add_subgroup(parent, title, labels):
+            grp = QTreeWidgetItem([title])
+            grp.setFlags(grp.flags() & ~Qt.ItemIsDragEnabled)
+            for lbl in labels:
+                ch = QTreeWidgetItem([lbl])
+                ch.setFlags(ch.flags() | Qt.ItemIsDragEnabled)
+                grp.addChild(ch)
+            parent.addChild(grp)
+
+        _add_subgroup(math_root, "Arithmetic",   _MATH_ARITHMETIC)
+        _add_subgroup(math_root, "Unary",        _MATH_UNARY)
+        _add_subgroup(math_root, "Trigonometry", _MATH_TRIG)
+        _add_subgroup(math_root, "Logarithm",    _MATH_LOG)
+        _add_subgroup(math_root, "Comparison",   _MATH_COMPARISON)
+        _add_subgroup(math_root, "Utility",      _MATH_UTILITY)
+
+        self.tree.addTopLevelItem(math_root)
+
+        # ── Geometry ────────────────────────────────────────────────────────
         geometry = QTreeWidgetItem(["Geometry"])
         geometry.setFlags(geometry.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Point", "Link", "Shape"):
@@ -121,7 +151,7 @@ class ToolboxPanel(QWidget):
             geometry.addChild(child)
         self.tree.addTopLevelItem(geometry)
 
-        # Auxiliary
+        # ── Auxiliary ───────────────────────────────────────────────────────
         auxiliary = QTreeWidgetItem(["Auxiliary"])
         auxiliary.setFlags(auxiliary.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Auxiliary Point", "Auxiliary Line", "Auxiliary Curve"):
@@ -130,7 +160,7 @@ class ToolboxPanel(QWidget):
             auxiliary.addChild(child)
         self.tree.addTopLevelItem(auxiliary)
 
-        # Workflow
+        # ── Workflow ────────────────────────────────────────────────────────
         workflow = QTreeWidgetItem(["Workflow"])
         workflow.setFlags(workflow.flags() & ~Qt.ItemIsDragEnabled)
         for label in ("Decision", "Switch", "Variable"):

@@ -9,6 +9,14 @@ from .typed_inputs import (IntegerInputNode, DoubleInputNode, StringInputNode,
                            GradeInputNode, SlopeInputNode,
                            YesNoInputNode, SuperelevationInputNode)
 from .workflow     import StartNode, DecisionNode, VariableNode, GenericNode
+from .math_nodes   import (
+    AddNode, SubtractNode, MultiplyNode, DivideNode, ModuloNode, PowerNode,
+    AbsNode, NegateNode, SqrtNode, CeilNode, FloorNode, RoundNode,
+    SinNode, CosNode, TanNode, AsinNode, AcosNode, AtanNode, Atan2Node,
+    LogNode, Log10Node, ExpNode,
+    MinNode, MaxNode, ClampNode,
+    InterpolateNode, MapRangeNode,
+)
 
 
 # Maps the node's 'type' string to its class for serialization/deserialization.
@@ -37,6 +45,39 @@ NODE_REGISTRY = {
     'Slope Input':          SlopeInputNode,
     'Yes\\No Input':        YesNoInputNode,
     'Superelevation Input': SuperelevationInputNode,
+    # Math — Arithmetic
+    'Add':      AddNode,
+    'Subtract': SubtractNode,
+    'Multiply': MultiplyNode,
+    'Divide':   DivideNode,
+    'Modulo':   ModuloNode,
+    'Power':    PowerNode,
+    # Math — Unary
+    'Abs':    AbsNode,
+    'Negate': NegateNode,
+    'Sqrt':   SqrtNode,
+    'Ceil':   CeilNode,
+    'Floor':  FloorNode,
+    'Round':  RoundNode,
+    # Math — Trigonometry
+    'Sin':   SinNode,
+    'Cos':   CosNode,
+    'Tan':   TanNode,
+    'Asin':  AsinNode,
+    'Acos':  AcosNode,
+    'Atan':  AtanNode,
+    'Atan2': Atan2Node,
+    # Math — Logarithm / Exponential
+    'Ln':    LogNode,
+    'Log10': Log10Node,
+    'Exp':   ExpNode,
+    # Math — Comparison
+    'Min':   MinNode,
+    'Max':   MaxNode,
+    'Clamp': ClampNode,
+    # Math — Utility
+    'Interpolate': InterpolateNode,
+    'Map Range':   MapRangeNode,
 }
 
 
