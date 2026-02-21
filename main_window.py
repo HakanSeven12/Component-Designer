@@ -9,7 +9,7 @@ from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QApplication)
 from PySide2.QtCore import Qt
 
-from .flowchart import FlowchartNodeItem, FlowchartView, _TYPED_INPUT_TYPES, _prefix_for_type
+from .flowchart import FlowchartNodeItem, FlowchartView, _prefix_for_type
 from .preview import GeometryPreview
 from .panels import ToolboxPanel
 from .models import create_node_from_dict
@@ -24,7 +24,6 @@ class ComponentDesigner(QMainWindow):
         self.current_file = None
         self.modified     = False
 
-        # Apply dark palette to the entire application
         theme.apply_palette(QApplication.instance())
 
         self.setup_ui()
@@ -45,7 +44,7 @@ class ComponentDesigner(QMainWindow):
 
         center_splitter = QSplitter(Qt.Vertical)
 
-        # ── Flowchart panel ──────────────────────────────────────────────────
+        # ── Flowchart panel ──────────────────────────────────────────────
         flowchart_container = QWidget()
         flowchart_layout    = QVBoxLayout()
         flowchart_label     = QLabel("Flowchart")
@@ -56,7 +55,7 @@ class ComponentDesigner(QMainWindow):
         flowchart_layout.setContentsMargins(0, 0, 0, 0)
         flowchart_container.setLayout(flowchart_layout)
 
-        # ── Preview panel ────────────────────────────────────────────────────
+        # ── Preview panel ────────────────────────────────────────────────
         preview_container = QWidget()
         preview_layout    = QVBoxLayout()
         preview_header    = QHBoxLayout()
@@ -68,7 +67,7 @@ class ComponentDesigner(QMainWindow):
         self.preview_mode_combo.addItems(["Layout Mode", "Roadway Mode"])
         self.preview_mode_combo.setStyleSheet(theme.PREVIEW_COMBO_STYLE)
 
-        self.show_codes_check    = QCheckBox("Codes")
+        self.show_codes_check = QCheckBox("Codes")
         self.show_codes_check.setChecked(True)
         self.show_codes_check.setStyleSheet(theme.PREVIEW_CHECKBOX_STYLE)
 
@@ -86,10 +85,10 @@ class ComponentDesigner(QMainWindow):
         preview_header_widget.setLayout(preview_header)
         preview_header_widget.setStyleSheet(theme.PREVIEW_HEADER_STYLE)
 
-        # Style the "Mode:" label inside the header
         for child in preview_header_widget.findChildren(QLabel):
             if child is not preview_label:
-                child.setStyleSheet("color: #8a98b0; font-size: 8pt; background: transparent;")
+                child.setStyleSheet(
+                    "color: #8a98b0; font-size: 8pt; background: transparent;")
 
         self.preview = GeometryPreview()
         preview_layout.addWidget(preview_header_widget)
@@ -110,14 +109,12 @@ class ComponentDesigner(QMainWindow):
         central.setLayout(main_layout)
         self.setCentralWidget(central)
 
-        # Apply global window stylesheet
         self.setStyleSheet(
             theme.MENUBAR_STYLE +
             theme.TOOLBAR_STYLE +
             theme.STATUSBAR_STYLE +
             theme.SPLITTER_STYLE
         )
-
         self.statusBar().showMessage("Ready")
 
     def create_actions(self):
@@ -235,6 +232,8 @@ class ComponentDesigner(QMainWindow):
             self.update_preview()
 
     # ------------------------------------------------------------------
+    # Selection
+    # ------------------------------------------------------------------
 
     def on_flowchart_node_selected(self, node):
         self.statusBar().showMessage(f"Selected: {node.type} - {node.name}")
@@ -249,34 +248,24 @@ class ComponentDesigner(QMainWindow):
         self.modified = True
         self.update_preview()
 
+    # ------------------------------------------------------------------
+    # Preview update  —  single entry point, no special-case resolvers
+    # ------------------------------------------------------------------
+
     def update_preview(self):
-        self._resolve_connections()
-        self.preview.update_preview(self.flowchart.scene.nodes)
+        """
+        Propagate all wire values (topological order) then redraw the preview.
 
-    def _resolve_connections(self):
-        """Push output port values from source nodes into connected input ports."""
-        nodes = self.flowchart.scene.nodes
-        for conn in self.flowchart.scene.connections:
-            from_node = nodes.get(conn['from'])
-            to_node   = nodes.get(conn['to'])
-            if from_node is None or to_node is None:
-                continue
-
-            from_port = conn.get('from_port', 'vector')
-            to_port   = conn.get('to_port',   'reference')
-
-            if hasattr(from_node, 'get_port_value'):
-                value = from_node.get_port_value(from_port)
-            else:
-                value = getattr(from_node, from_port, None)
-
-            if value is None:
-                continue
-
-            if hasattr(to_node, 'set_port_value'):
-                to_node.set_port_value(to_port, value)
-            elif hasattr(to_node, to_port):
-                setattr(to_node, to_port, value)
+        resolve_all_wires() is the ONLY place where inter-node data transfer
+        happens.  It calls node.get_port_value() → node.set_port_value()
+        for every connection in topological order, so every node has
+        up-to-date inputs before its outputs are read by the preview renderer.
+        """
+        self.flowchart.scene.resolve_all_wires()
+        self.preview.update_preview(
+            self.flowchart.scene.nodes,
+            connections=self.flowchart.scene.connections,
+        )
 
     def toggle_codes(self, state):
         self.preview.show_codes = (state == Qt.Checked)
@@ -285,6 +274,10 @@ class ComponentDesigner(QMainWindow):
     def toggle_comments(self, state):
         self.preview.show_comments = (state == Qt.Checked)
         self.update_preview()
+
+    # ------------------------------------------------------------------
+    # File operations
+    # ------------------------------------------------------------------
 
     def new_file(self):
         if self.check_save_changes():
@@ -357,7 +350,7 @@ class ComponentDesigner(QMainWindow):
                 self.flowchart.scene.addItem(item)
                 node_map[node.id] = node
 
-                # Restore the global ID counter
+                # Restore global ID counter
                 if node.id.startswith('N'):
                     try:
                         num = int(node.id[1:])
@@ -366,25 +359,56 @@ class ComponentDesigner(QMainWindow):
                     except ValueError:
                         pass
 
-                # Restore per-type name counter by inspecting existing names.
-                # If the node name ends with digits that follow the expected
-                # prefix, bump the counter to at least that number so the next
-                # new node of the same type gets a higher suffix.
+                # Restore per-type name counter
                 node_type = node.type
                 prefix    = _prefix_for_type(node_type)
                 name      = node.name or ""
                 if name.upper().startswith(prefix.upper()):
                     suffix = name[len(prefix):]
                     if suffix.isdigit():
-                        n = int(suffix)
+                        n   = int(suffix)
                         cur = self.flowchart._type_counters.get(node_type, 0)
                         if n > cur:
                             self.flowchart._type_counters[node_type] = n
 
-            for conn in data.get('connections', []):
+            # ── Legacy migration: from_point / start_point / end_point ──
+            # Old JSON files stored node-ID references instead of wires.
+            # Convert them to proper connections so the wire system handles them.
+            legacy_conns = []
+            for node in node_map.values():
+                fp = getattr(node, '_legacy_from_point', None)
+                if fp and fp in node_map:
+                    legacy_conns.append({
+                        'from': fp,   'from_port': 'position',
+                        'to':   node.id, 'to_port': 'reference',
+                    })
+                sp = getattr(node, '_legacy_start_point', None)
+                if sp and sp in node_map:
+                    legacy_conns.append({
+                        'from': sp,   'from_port': 'position',
+                        'to':   node.id, 'to_port': 'start',
+                    })
+                ep = getattr(node, '_legacy_end_point', None)
+                if ep and ep in node_map:
+                    legacy_conns.append({
+                        'from': ep,   'from_port': 'position',
+                        'to':   node.id, 'to_port': 'end',
+                    })
+
+            all_connections = data.get('connections', []) + legacy_conns
+            # Deduplicate (to_id + to_port uniquely identifies an input)
+            seen = set()
+            deduped = []
+            for conn in all_connections:
+                key = (conn['to'], conn.get('to_port', ''))
+                if key not in seen:
+                    seen.add(key)
+                    deduped.append(conn)
+
+            for conn in deduped:
                 from_id   = conn['from']
                 to_id     = conn['to']
-                from_port = conn.get('from_port', 'vector')
+                from_port = conn.get('from_port', 'position')
                 to_port   = conn.get('to_port',   'reference')
                 if from_id in node_map and to_id in node_map:
                     self.flowchart.scene.connect_nodes_with_wire(

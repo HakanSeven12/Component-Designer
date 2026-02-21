@@ -1,14 +1,30 @@
 """
-Flowchart Module for Component Designer
+Flowchart Module for Component Designer.
+
+Wire-based data transport
+-------------------------
+Every wire carries data from one node's output port to another node's input
+port.  There are no special-case node-ID references (from_point, start_point,
+etc.) anywhere in this file.  The general flow is:
+
+    wire connects  from_node.output_port  →  to_node.input_port
+    on every update:
+        value = from_node.get_port_value(output_port)
+        to_node.set_port_value(input_port, value)
+
+This means ANY output port value (float, tuple, bool, …) can be delivered to
+ANY compatible input port purely through wires, with no special handling.
 """
 
 from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
 from PySide2.QtCore import Qt, Signal, QPointF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
+
 from .models import *
-from .models.targets import SurfaceTargetNode, ElevationTargetNode, OffsetTargetNode
+from .models.geometry import PointNode, LinkNode
+from .models.workflow import DecisionNode
 from .base_graphics_view import BaseGraphicsView
-from .node import FlowchartNodeItem
+from .node import FlowchartNodeItem, DecisionNodeItem
 from .theme_dark import theme
 from .undo_stack import (
     UndoStack,
@@ -59,8 +75,8 @@ class FlowchartScene(QGraphicsScene):
     def __init__(self):
         super().__init__()
         self.nodes       = {}
-        self.connections = []
-        self.port_wires  = []
+        self.connections = []   # list of {from, from_port, to, to_port}
+        self.port_wires  = []   # list of wire-data dicts
         self.selected_node = None
 
         self.connection_in_progress = False
@@ -71,16 +87,14 @@ class FlowchartScene(QGraphicsScene):
         self.undo_stack = UndoStack(max_depth=100)
 
     # ------------------------------------------------------------------
-    # Port helpers
+    # Port classification helpers
     # ------------------------------------------------------------------
 
     def _is_output(self, node_item, port_name):
-        ports = node_item.node.get_output_ports()
-        return port_name in ports and not isinstance(ports[port_name], list)
+        return port_name in node_item.node.get_output_ports()
 
     def _is_input(self, node_item, port_name):
-        ports = node_item.node.get_input_ports()
-        return port_name in ports and not isinstance(ports[port_name], list)
+        return port_name in node_item.node.get_input_ports()
 
     def _is_port_connected(self, node_item, port_name):
         return any(
@@ -89,9 +103,11 @@ class FlowchartScene(QGraphicsScene):
         )
 
     def can_connect(self, from_item, from_port, to_item, to_port):
+        """Any output port can connect to any input port (duck-typed values)."""
         if from_item is to_item:
             return False
-        return self._is_output(from_item, from_port) and self._is_input(to_item, to_port)
+        return (self._is_output(from_item, from_port) and
+                self._is_input(to_item,   to_port))
 
     # ------------------------------------------------------------------
     # Port-click entry point
@@ -99,9 +115,10 @@ class FlowchartScene(QGraphicsScene):
 
     def handle_port_click(self, node_item, port_name):
         is_out = self._is_output(node_item, port_name)
-        is_in  = self._is_input(node_item, port_name)
+        is_in  = self._is_input(node_item,  port_name)
 
         if not self.connection_in_progress:
+            # Click on an already-connected input → remove the wire
             if is_in and self._is_port_connected(node_item, port_name):
                 wire_data = next(
                     (w for w in self.port_wires
@@ -115,12 +132,12 @@ class FlowchartScene(QGraphicsScene):
                         node_item, port_name,
                     )
                     self.undo_stack.push(cmd)
-                else:
-                    self._disconnect_input_port(node_item, port_name)
                 return
+            # Click on an output → start a new wire
             if is_out:
                 self._start_connection(node_item, port_name)
         else:
+            # Second click on an input → finish the wire
             if is_in and node_item is not self.connection_start_item:
                 if self.can_connect(self.connection_start_item,
                                     self.connection_start_port,
@@ -135,8 +152,6 @@ class FlowchartScene(QGraphicsScene):
                         self.connection_start_item, self.connection_start_port,
                         node_item, port_name,
                     )
-                    saved_start_item = self.connection_start_item
-                    saved_start_port = self.connection_start_port
                     self.connection_start_item = None
                     self.connection_start_port = None
                     self.undo_stack.push(cmd)
@@ -146,7 +161,82 @@ class FlowchartScene(QGraphicsScene):
                 self._cancel_connection()
 
     # ------------------------------------------------------------------
-    # Disconnect
+    # Wire lifecycle — connect
+    # ------------------------------------------------------------------
+
+    def _start_connection(self, node_item, port_name):
+        self.connection_in_progress = True
+        self.connection_start_item  = node_item
+        self.connection_start_port  = port_name
+        start_pos      = node_item.get_port_scene_pos(port_name)
+        self.temp_wire = ConnectionWire(start_pos, start_pos)
+        self.addItem(self.temp_wire)
+
+    def _cancel_connection(self):
+        if self.temp_wire:
+            self.removeItem(self.temp_wire)
+            self.temp_wire = None
+        self.connection_in_progress = False
+        self.connection_start_item  = None
+        self.connection_start_port  = None
+
+    def connect_nodes_with_wire(self, from_node, to_node,
+                                from_port: str, to_port: str):
+        """
+        Draw a wire between two nodes and register the connection.
+
+        Called by AddConnectionCommand.redo() and load_file().
+        Replaces any existing wire on the destination input port first.
+        """
+        from_item = to_item = None
+        for i in self.items():
+            if isinstance(i, FlowchartNodeItem):
+                if i.node is from_node:
+                    from_item = i
+                elif i.node is to_node:
+                    to_item = i
+
+        if not (from_item and to_item):
+            return
+        if from_port not in from_item.ports or to_port not in to_item.ports:
+            return
+
+        # Remove any existing wire on to_port (inputs accept only one wire)
+        self._disconnect_input_port(to_item, to_port, record_undo=False)
+
+        sp = from_item.get_port_scene_pos(from_port)
+        ep = to_item.get_port_scene_pos(to_port)
+
+        wire           = ConnectionWire(sp, ep)
+        wire.from_node = from_node
+        wire.to_node   = to_node
+        wire.from_port = from_port
+        wire.to_port   = to_port
+        self.addItem(wire)
+
+        self.port_wires.append({
+            'wire':      wire,
+            'from_item': from_item,
+            'to_item':   to_item,
+            'from_port': from_port,
+            'to_port':   to_port,
+        })
+        self.connections.append({
+            'from':      from_node.id,
+            'to':        to_node.id,
+            'from_port': from_port,
+            'to_port':   to_port,
+        })
+
+        if to_port in to_item.ports:
+            to_item.ports[to_port].set_connected(True)
+
+        # Immediately push the current value through the new wire
+        self._push_wire_value(from_node, from_port, to_node, to_port)
+        self.request_preview_update()
+
+    # ------------------------------------------------------------------
+    # Wire lifecycle — disconnect
     # ------------------------------------------------------------------
 
     def _disconnect_input_port(self, node_item, port_name, record_undo=True):
@@ -172,109 +262,72 @@ class FlowchartScene(QGraphicsScene):
             self.port_wires.remove(w)
             self.connections = [
                 c for c in self.connections
-                if not (c['to'] == node_item.node.id and c['to_port'] == port_name)
+                if not (c['to'] == node_item.node.id and
+                        c['to_port'] == port_name)
             ]
-            self._clear_node_ref(node_item.node, port_name)
-            if port_name in node_item.ports:
-                node_item.ports[port_name].set_connected(False)
-        self.request_preview_update()
-
-    # ------------------------------------------------------------------
-    # Connect
-    # ------------------------------------------------------------------
-
-    def _start_connection(self, node_item, port_name):
-        self.connection_in_progress = True
-        self.connection_start_item  = node_item
-        self.connection_start_port  = port_name
-        start_pos      = node_item.get_port_scene_pos(port_name)
-        self.temp_wire = ConnectionWire(start_pos, start_pos)
-        self.addItem(self.temp_wire)
-
-    def _finish_connection(self, node_item, port_name):
-        """Direct finish (legacy path, kept for compatibility)."""
-        if not self.connection_in_progress:
-            return
-
-        stale = [w for w in self.port_wires
-                 if w['to_item'] is node_item and w['to_port'] == port_name]
-        for w in stale:
-            self.removeItem(w['wire'])
-            self.port_wires.remove(w)
-            self.connections = [c for c in self.connections
-                                 if not (c['to'] == node_item.node.id
-                                         and c['to_port'] == port_name)]
-            self._clear_node_ref(node_item.node, port_name)
             if port_name in node_item.ports:
                 node_item.ports[port_name].set_connected(False)
 
-        sp = self.connection_start_item.get_port_scene_pos(self.connection_start_port)
-        ep = node_item.get_port_scene_pos(port_name)
-
-        wire           = ConnectionWire(sp, ep)
-        wire.from_node = self.connection_start_item.node
-        wire.to_node   = node_item.node
-        wire.from_port = self.connection_start_port
-        wire.to_port   = port_name
-        self.addItem(wire)
-        self.port_wires.append({
-            'wire':      wire,
-            'from_item': self.connection_start_item,
-            'to_item':   node_item,
-            'from_port': self.connection_start_port,
-            'to_port':   port_name,
-        })
-
-        self._set_node_ref(self.connection_start_item.node,
-                           self.connection_start_port,
-                           node_item.node, port_name)
-        self.connections.append({
-            'from':      self.connection_start_item.node.id,
-            'to':        node_item.node.id,
-            'from_port': self.connection_start_port,
-            'to_port':   port_name,
-        })
-
-        if port_name in node_item.ports:
-            node_item.ports[port_name].set_connected(True)
-
-        if self.temp_wire:
-            self.removeItem(self.temp_wire)
-            self.temp_wire = None
-        self.connection_in_progress = False
-        self.connection_start_item  = None
-        self.connection_start_port  = None
         self.request_preview_update()
 
-    def _cancel_connection(self):
-        if self.temp_wire:
-            self.removeItem(self.temp_wire)
-            self.temp_wire = None
-        self.connection_in_progress = False
-        self.connection_start_item  = None
-        self.connection_start_port  = None
-
     # ------------------------------------------------------------------
-    # Node-ref helpers
+    # Unified value push  (the core of the wire-based data transport)
     # ------------------------------------------------------------------
 
-    def _set_node_ref(self, from_node, from_port, to_node, to_port):
-        if isinstance(to_node, PointNode) and to_port == 'reference':
-            to_node.from_point = from_node.id
-        elif isinstance(to_node, LinkNode):
-            if to_port == 'start':
-                to_node.start_point = from_node.id
-            elif to_port == 'end':
-                to_node.end_point = from_node.id
+    def _push_wire_value(self, from_node, from_port, to_node, to_port):
+        """
+        Read from_node.get_port_value(from_port) and deliver it to
+        to_node.set_port_value(to_port, value).
 
-    def _clear_node_ref(self, node, port):
-        if isinstance(node, PointNode) and port == 'reference':
-            node.from_point = None
-        elif isinstance(node, LinkNode):
-            if port == 'start':
-                node.start_point = None
-            elif port == 'end':
-                node.end_point = None
+        This is the ONLY place where data crosses a wire.  No special
+        cases for point references, link endpoints, etc.
+        """
+        value = from_node.get_port_value(from_port)
+        if value is not None:
+            to_node.set_port_value(to_port, value)
+
+    def resolve_all_wires(self):
+        """
+        Propagate all wire values in topological order.
+
+        Called before every preview update so that every node has
+        up-to-date inputs before its output is read.
+        """
+        # Build adjacency for topological sort over the connection graph
+        ids       = list(self.nodes.keys())
+        in_degree = {nid: 0 for nid in ids}
+        adj       = {nid: [] for nid in ids}
+
+        for conn in self.connections:
+            f, t = conn['from'], conn['to']
+            if f in adj and t in in_degree:
+                adj[f].append(conn)
+                in_degree[t] += 1
+
+        from collections import deque
+        queue  = deque(nid for nid in ids if in_degree[nid] == 0)
+        order  = []
+        while queue:
+            nid = queue.popleft()
+            order.append(nid)
+            for conn in adj[nid]:
+                t = conn['to']
+                in_degree[t] -= 1
+                if in_degree[t] == 0:
+                    queue.append(t)
+
+        # Walk in topological order and push each wire's value
+        for nid in order:
+            for conn in self.connections:
+                if conn['from'] != nid:
+                    continue
+                from_node = self.nodes.get(conn['from'])
+                to_node   = self.nodes.get(conn['to'])
+                if from_node and to_node:
+                    self._push_wire_value(
+                        from_node, conn['from_port'],
+                        to_node,   conn['to_port'],
+                    )
 
     # ------------------------------------------------------------------
     # Mouse move (temp wire)
@@ -293,7 +346,12 @@ class FlowchartScene(QGraphicsScene):
         self.nodes[node.id] = node
         node.x = x
         node.y = y
-        item = FlowchartNodeItem(node, x, y)
+
+        if isinstance(node, DecisionNode):
+            item = DecisionNodeItem(node, x, y)
+        else:
+            item = FlowchartNodeItem(node, x, y)
+
         self.addItem(item)
         return item
 
@@ -307,6 +365,7 @@ class FlowchartScene(QGraphicsScene):
             self.undo_stack.push(cmd)
             return True
 
+        # Disconnect all wires touching this node
         for w in [d for d in self.port_wires
                   if d['from_item'] is item or d['to_item'] is item]:
             self.removeItem(w['wire'])
@@ -316,7 +375,8 @@ class FlowchartScene(QGraphicsScene):
                 peer.ports[pport].set_connected(False)
 
         self.port_wires  = [w for w in self.port_wires
-                            if w['from_item'] is not item and w['to_item'] is not item]
+                            if w['from_item'] is not item and
+                               w['to_item']   is not item]
         self.connections = [c for c in self.connections
                             if c['from'] != node.id and c['to'] != node.id]
         if node.id in self.nodes:
@@ -326,7 +386,8 @@ class FlowchartScene(QGraphicsScene):
         return True
 
     def delete_selected_node(self):
-        selected = [i for i in self.selectedItems() if isinstance(i, FlowchartNodeItem)]
+        selected = [i for i in self.selectedItems()
+                    if isinstance(i, FlowchartNodeItem)]
         if not selected:
             return False
         return self._remove_node_item(selected[0], record_undo=True)
@@ -343,167 +404,46 @@ class FlowchartScene(QGraphicsScene):
     def request_preview_update(self):
         self.preview_update_requested.emit()
 
-    def connect_nodes_with_wire(self, from_node, to_node,
-                                from_port='vector', to_port='reference'):
-        from_item = to_item = None
-        for i in self.items():
-            if isinstance(i, FlowchartNodeItem):
-                if i.node is from_node:
-                    from_item = i
-                elif i.node is to_node:
-                    to_item = i
 
-        if not (from_item and to_item):
-            return
-        if from_port not in from_item.ports or to_port not in to_item.ports:
-            return
-
-        stale = [w for w in self.port_wires
-                 if w['to_item'] is to_item and w['to_port'] == to_port]
-        for w in stale:
-            self.removeItem(w['wire'])
-            self.port_wires.remove(w)
-            self.connections = [c for c in self.connections
-                                 if not (c['to'] == to_node.id
-                                         and c['to_port'] == to_port)]
-            self._clear_node_ref(to_node, to_port)
-            if to_port in to_item.ports:
-                to_item.ports[to_port].set_connected(False)
-
-        sp = from_item.get_port_scene_pos(from_port)
-        ep = to_item.get_port_scene_pos(to_port)
-
-        wire           = ConnectionWire(sp, ep)
-        wire.from_node = from_node
-        wire.to_node   = to_node
-        wire.from_port = from_port
-        wire.to_port   = to_port
-        self.addItem(wire)
-        self.port_wires.append({
-            'wire':      wire,
-            'from_item': from_item,
-            'to_item':   to_item,
-            'from_port': from_port,
-            'to_port':   to_port,
-        })
-        self._set_node_ref(from_node, from_port, to_node, to_port)
-
-        if to_port in to_item.ports:
-            to_item.ports[to_port].set_connected(True)
-
-        self.connections.append({
-            'from':      from_node.id,
-            'to':        to_node.id,
-            'from_port': from_port,
-            'to_port':   to_port,
-        })
-
+# ---------------------------------------------------------------------------
+# Per-type abbreviation map  (unchanged)
+# ---------------------------------------------------------------------------
 
 _TYPED_INPUT_TYPES = (
-    "Integer Input",
-    "Double Input",
-    "String Input",
-    "Grade Input",
-    "Slope Input",
-    "Yes\\No Input",
-    "Side Input",
-    "Superelevation Input",
+    "Integer Input", "Double Input", "String Input",
+    "Grade Input", "Slope Input", "Yes\\No Input",
+    "Side Input", "Superelevation Input",
 )
 
-
-# ---------------------------------------------------------------------------
-# Per-type abbreviation map
-# Each node type maps to a short prefix used in auto-generated names.
-# ---------------------------------------------------------------------------
-
 _TYPE_PREFIX: dict[str, str] = {
-    # Geometry
-    "Point": "P",
-    "Link":  "L",
-    "Shape": "SH",
-    # Workflow
-    "Start":    "ST",
-    "Decision": "D",
-    "Variable": "VAR",
-    # Parameters
-    "Input":  "IN",
-    "Output": "OUT",
-    # Targets
-    "Surface Target":   "SURF",
-    "Elevation Target": "ELEV",
-    "Offset Target":    "OFF",
-    # Typed inputs
-    "Integer Input":        "INT",
-    "Double Input":         "DBL",
-    "String Input":         "STR",
-    "Grade Input":          "GRD",
-    "Slope Input":          "SLP",
-    "Yes\\No Input":        "YN",
-    "Superelevation Input": "SE",
-    # Math — Arithmetic
-    "Add":      "ADD",
-    "Subtract": "SUB",
-    "Multiply": "MUL",
-    "Divide":   "DIV",
-    "Modulo":   "MOD",
-    "Power":    "POW",
-    # Math — Unary
-    "Abs":    "ABS",
-    "Negate": "NEG",
-    "Sqrt":   "SQRT",
-    "Ceil":   "CEIL",
-    "Floor":  "FLR",
-    "Round":  "RND",
-    # Math — Trigonometry
-    "Sin":   "SIN",
-    "Cos":   "COS",
-    "Tan":   "TAN",
-    "Asin":  "ASIN",
-    "Acos":  "ACOS",
-    "Atan":  "ATAN",
-    "Atan2": "AT2",
-    # Math — Logarithm / Exponential
-    "Ln":    "LN",
-    "Log10": "LOG",
-    "Exp":   "EXP",
-    # Math — Comparison
-    "Min":   "MIN",
-    "Max":   "MAX",
-    "Clamp": "CLM",
-    # Math — Utility
-    "Interpolate": "LERP",
-    "Map Range":   "MAP",
-    # Logic — Boolean
-    "And":  "AND",
-    "Or":   "OR",
-    "Not":  "NOT",
-    "Xor":  "XOR",
-    "Nand": "NAND",
-    "Nor":  "NOR",
-    # Logic — Comparison
-    "Equal":         "EQ",
-    "Not Equal":     "NEQ",
-    "Greater":       "GT",
-    "Greater Equal": "GTE",
-    "Less":          "LT",
-    "Less Equal":    "LTE",
-    # Logic — Utility
-    "If Else": "IF",
-    "Switch":  "SW",
-    "All":     "ALL",
-    "Any":     "ANY",
+    "Point": "P", "Link": "L", "Shape": "SH",
+    "Start": "ST", "Decision": "D", "Variable": "VAR",
+    "Input": "IN", "Output": "OUT",
+    "Surface Target": "SURF", "Elevation Target": "ELEV", "Offset Target": "OFF",
+    "Integer Input": "INT", "Double Input": "DBL", "String Input": "STR",
+    "Grade Input": "GRD", "Slope Input": "SLP",
+    "Yes\\No Input": "YN", "Superelevation Input": "SE",
+    "Add": "ADD", "Subtract": "SUB", "Multiply": "MUL",
+    "Divide": "DIV", "Modulo": "MOD", "Power": "POW",
+    "Abs": "ABS", "Negate": "NEG", "Sqrt": "SQRT",
+    "Ceil": "CEIL", "Floor": "FLR", "Round": "RND",
+    "Sin": "SIN", "Cos": "COS", "Tan": "TAN",
+    "Asin": "ASIN", "Acos": "ACOS", "Atan": "ATAN", "Atan2": "AT2",
+    "Ln": "LN", "Log10": "LOG", "Exp": "EXP",
+    "Min": "MIN", "Max": "MAX", "Clamp": "CLM",
+    "Interpolate": "LERP", "Map Range": "MAP",
 }
 
 
 def _prefix_for_type(node_type: str) -> str:
-    """
-    Return the short prefix for *node_type*.
-    Falls back to initials of the type words (e.g. "Auxiliary Point" → "AP").
-    """
     if node_type in _TYPE_PREFIX:
         return _TYPE_PREFIX[node_type]
     return "".join(w[0].upper() for w in node_type.split()) or "X"
 
+
+# ---------------------------------------------------------------------------
+# FlowchartView
+# ---------------------------------------------------------------------------
 
 class FlowchartView(BaseGraphicsView):
 
@@ -514,11 +454,7 @@ class FlowchartView(BaseGraphicsView):
         self.setRenderHint(QPainter.Antialiasing)
         self.setAcceptDrops(True)
 
-        # Global counter still used for unique node IDs (N0001, N0002 …)
         self.node_counter = 0
-
-        # Per-type counter: maps node_type → how many have been created so far.
-        # Used exclusively for the human-readable name suffix (P1, P2, ADD1 …).
         self._type_counters: dict[str, int] = {}
 
         self._clipboard_node = None
@@ -529,10 +465,6 @@ class FlowchartView(BaseGraphicsView):
         self.setStyleSheet(theme.SCROLLBAR_STYLE)
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.create_start_node()
-
-    # ------------------------------------------------------------------
-    # Shortcut for external callers
-    # ------------------------------------------------------------------
 
     @property
     def undo_stack(self):
@@ -631,8 +563,7 @@ class FlowchartView(BaseGraphicsView):
                         cmd = MoveNodeCommand(self.scene, item, old_pos, new_pos)
                         self.scene.undo_stack._stack = \
                             self.scene.undo_stack._stack[
-                                :self.scene.undo_stack._index + 1
-                            ]
+                                :self.scene.undo_stack._index + 1]
                         self.scene.undo_stack._stack.append(cmd)
                         self.scene.undo_stack._index = \
                             len(self.scene.undo_stack._stack) - 1
@@ -646,17 +577,10 @@ class FlowchartView(BaseGraphicsView):
     def _paste_node(self):
         src  = self._clipboard_node
         data = src.to_dict()
-
-        data['id'] = self._next_id()
-        data['x']  = src.x + 30
-        data['y']  = src.y + 30
-
-        # Generate a per-type name for the pasted node
+        data['id']   = self._next_id()
+        data['x']    = src.x + 30
+        data['y']    = src.y + 30
         data['name'] = self._next_type_name(src.type)
-
-        for ref in ('from_point', 'start_point', 'end_point'):
-            if ref in data:
-                data[ref] = None
 
         from .models import create_node_from_dict
         new_node = create_node_from_dict(data)
@@ -720,23 +644,12 @@ class FlowchartView(BaseGraphicsView):
     # ------------------------------------------------------------------
 
     def _next_id(self) -> str:
-        """Return a new globally-unique node ID (e.g. 'N0003')."""
         self.node_counter += 1
         return f"N{self.node_counter:04d}"
 
     def _next_type_name(self, node_type: str) -> str:
-        """
-        Return the next auto-generated human-readable name for *node_type*.
-
-        Each type has its own independent counter so you get:
-            P1, P2, P3  …  for Points
-            L1, L2      …  for Links
-            ADD1, ADD2  …  for Add nodes
-        instead of a single global sequence.
-        """
         self._type_counters[node_type] = self._type_counters.get(node_type, 0) + 1
-        prefix = _prefix_for_type(node_type)
-        return f"{prefix}{self._type_counters[node_type]}"
+        return f"{_prefix_for_type(node_type)}{self._type_counters[node_type]}"
 
     def _auto_pos(self):
         x = 50 + (self.node_counter * 160) % 640
@@ -753,19 +666,10 @@ class FlowchartView(BaseGraphicsView):
         return node
 
     def add_node_by_type(self, node_type: str, x=None, y=None):
-        """
-        Create any node by its type string and add it to the scene.
-
-        If *x* / *y* are omitted the node is placed at the next
-        auto-layout position.  Returns the new node, or None if the
-        type string is not recognised.
-        """
         if x is None or y is None:
             x, y = self._auto_pos()
-
         node_id   = self._next_id()
         node_name = self._next_type_name(node_type)
-
         node = create_node_from_type(node_type, node_id, node_name)
         return self._add_node(node, x, y)
 

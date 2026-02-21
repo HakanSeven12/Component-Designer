@@ -5,11 +5,13 @@ Node Widgets for Flowchart
 from PySide2.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
-    QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
-    QToolTip,
+    QGraphicsProxyWidget, QGraphicsRectItem, QGraphicsPolygonItem,
+    QStyle, QSizePolicy, QToolTip,
 )
 from PySide2.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
-from PySide2.QtGui import QPainter, QBrush, QColor, QPen
+from PySide2.QtGui import (
+    QPainter, QBrush, QColor, QPen, QPolygonF, QFont,
+)
 
 from .theme_dark import theme
 from .models.base import unpack_port, SCALAR_TYPES
@@ -33,6 +35,10 @@ EDITOR_STYLE_DISABLED = theme.EDITOR_STYLE_DISABLED
 COMBO_STYLE           = theme.COMBO_STYLE
 LABEL_STYLE           = theme.LABEL_STYLE
 
+# Decision node branch colors
+_YES_COLOR = QColor(60, 200, 100)    # green — true branch
+_NO_COLOR  = QColor(220, 80,  60)    # red   — false branch
+_IF_HEADER = QColor(70,  55, 120)    # purple-ish header for Decision
 
 _TOOLTIP_STYLE = """
 QToolTip {
@@ -148,6 +154,8 @@ class PortRow(QWidget):
         When False the inline editor widget is suppressed even when
         *editor_type* is set.  The row still renders dot + label so
         the port remains connectable via wires.
+    dot_color : QColor or None
+        Override the default dot colour (used by Decision node for yes/no).
     """
 
     port_clicked  = Signal(object, str)
@@ -156,7 +164,9 @@ class PortRow(QWidget):
     def __init__(self, port_name, port_label, direction,
                  editor_type=None, editor_value=None,
                  editor=True,
-                 node_item_ref=None, parent=None):
+                 node_item_ref=None,
+                 dot_color=None,
+                 parent=None):
         super().__init__(parent)
         self.port_name     = port_name
         self.direction     = direction
@@ -164,7 +174,10 @@ class PortRow(QWidget):
         self._connected    = False
         self._hovered      = False
 
-        self._dot_color   = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
+        if dot_color is not None:
+            self._dot_color = dot_color
+        else:
+            self._dot_color = INPUT_COLOR if direction == 'input' else OUTPUT_COLOR
         self._hover_color = ROW_HOVER_INPUT if direction == 'input' else ROW_HOVER_OUTPUT
 
         self._dot = PortDot(self._dot_color, self)
@@ -351,6 +364,10 @@ class PortRow(QWidget):
         super().paintEvent(event)
 
 
+# ===========================================================================
+# Standard node item
+# ===========================================================================
+
 class FlowchartNodeItem(QGraphicsRectItem):
 
     def __init__(self, node, x, y, parent=None):
@@ -452,7 +469,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
         outputs = self.node.get_output_ports()
 
         # Separate combo (list) ports from scalar/ref ports.
-        # A port_def is a combo when its type resolves to a list.
         def _is_combo(port_def):
             if isinstance(port_def, list):
                 return True
@@ -475,7 +491,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
             cslay.setContentsMargins(4, 2, 4, 4)
             cslay.setSpacing(4)
             for name, port_def in all_combos:
-                # Unwrap dict wrapper if present; raw list is also valid.
                 opts = (port_def.get('type') if isinstance(port_def, dict)
                         else port_def)
                 lbl  = name.replace('_', ' ').title()
@@ -493,10 +508,9 @@ class FlowchartNodeItem(QGraphicsRectItem):
             layout.addWidget(sep)
 
         # ── Port row factory ─────────────────────────────────────────────
-        def make_port_row(port_name, port_def, direction):
+        def make_port_row(port_name, port_def, direction, dot_color=None):
             ptype, show_editor = unpack_port(port_def)
 
-            # Resolve current value for the editor widget.
             if ptype in SCALAR_TYPES:
                 if hasattr(self.node, 'get_port_value'):
                     eval_ = self.node.get_port_value(port_name)
@@ -517,8 +531,9 @@ class FlowchartNodeItem(QGraphicsRectItem):
                 direction    = direction,
                 editor_type  = ptype if ptype in SCALAR_TYPES else None,
                 editor_value = eval_,
-                editor       = show_editor,   # ← dict 'editor' key wired through
+                editor       = show_editor,
                 node_item_ref= None,
+                dot_color    = dot_color,
             )
             pr.value_changed.connect(self._on_value_changed)
             pr.port_clicked.connect(self._on_port_clicked)
@@ -794,3 +809,350 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
     def mouseDoubleClickEvent(self, event):
         self.edit_name()
+
+
+# ===========================================================================
+# Decision node item  —  IF/ELSE visual with diamond header
+# ===========================================================================
+
+class DecisionNodeItem(FlowchartNodeItem):
+    """
+    A specialised FlowchartNodeItem for DecisionNode.
+
+    Visual differences from the standard node
+    ------------------------------------------
+    * Header is drawn as a **diamond (rhombus)** shape that protrudes above
+      the rectangular body, giving the classic flowchart "decision" look.
+    * Header background uses a distinct purple colour so it stands out.
+    * The 'yes' output port dot is green and labelled "YES ✔".
+    * The 'no'  output port dot is red   and labelled "NO ✘".
+    * A small "IF" badge is rendered inside the diamond tip.
+    * Active branch label ("▶ YES" / "▶ NO") is shown below the condition
+      spinbox so the user can see at a glance which branch is live.
+    """
+
+    # Extra pixels the diamond tip protrudes above the widget rect
+    _DIAMOND_OVERHANG = 14
+
+    def __init__(self, node, x, y, parent=None):
+        # We need the overhang space so shift the proxy widget down.
+        super().__init__(node, x, y, parent)
+        # Move the proxy widget down to leave room for the diamond tip
+        self.proxy.setPos(0, self._DIAMOND_OVERHANG)
+        self.update_size()
+
+    # ------------------------------------------------------------------
+    # Override header: no rounded rect header widget — diamond is painted
+    # directly in paint().  We keep the widget for the name label only.
+    # ------------------------------------------------------------------
+
+    def _build_header(self):
+        """
+        Build a slim header widget that contains only the name label and
+        rename edit.  The diamond shape is rendered purely via QPainter.
+        """
+        w = QWidget()
+        w.setAttribute(Qt.WA_TranslucentBackground)
+        w.setStyleSheet("background: transparent;")
+        w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        lay = QHBoxLayout()
+        # Top margin = diamond overhang so text sits below the diamond tip
+        lay.setContentsMargins(8, self._DIAMOND_OVERHANG + 2, 8, 4)
+
+        self._header_label = QLabel(f"IF  ·  {self.node.name}")
+        self._header_label.setStyleSheet(
+            "QLabel { color: #e8d870; font-weight: bold; "
+            "font-size: 9pt; background: transparent; }"
+        )
+        self._header_label.setAlignment(Qt.AlignCenter)
+        self._header_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._header_label.mouseDoubleClickEvent = lambda e: self.edit_name()
+
+        self._name_edit = QLineEdit(self.node.name)
+        self._name_edit.setAlignment(Qt.AlignCenter)
+        self._name_edit.setStyleSheet(theme.NAME_EDIT_STYLE)
+        self._name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._name_edit.hide()
+        self._name_edit.returnPressed.connect(self._finish_rename)
+        self._name_edit.editingFinished.connect(self._finish_rename)
+
+        lay.addWidget(self._header_label)
+        lay.addWidget(self._name_edit)
+        w.setLayout(lay)
+        return w
+
+    # ------------------------------------------------------------------
+    # Override body: add coloured yes/no port rows + live branch badge
+    # ------------------------------------------------------------------
+
+    def _populate_port_rows(self, layout):
+        """
+        Custom port layout for Decision node:
+
+        ┌─ INPUT ──────────────────────┐
+        │  ● condition  [spinbox]       │
+        ├──────────────────────────────┤
+        │  Active branch badge          │
+        ├─ OUTPUT ─────────────────────┤
+        │             YES ✔  ●(green)  │
+        │              NO ✘  ●(red)    │
+        └──────────────────────────────┘
+        """
+        self.ports.clear()
+
+        # ── condition input port ─────────────────────────────────────────
+        cond_val = getattr(self.node, 'condition', 0.0)
+        cond_row = PortRow(
+            port_name    = 'condition',
+            port_label   = 'Condition',
+            direction    = 'input',
+            editor_type  = 'float',
+            editor_value = cond_val,
+            editor       = True,
+            node_item_ref= None,
+        )
+        cond_row.value_changed.connect(self._on_value_changed)
+        cond_row.port_clicked.connect(self._on_port_clicked)
+        self.ports['condition'] = cond_row
+        layout.addWidget(cond_row)
+
+        # ── separator ────────────────────────────────────────────────────
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(theme.SEPARATOR_STYLE)
+        sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(sep)
+
+        # ── active-branch badge ──────────────────────────────────────────
+        self._branch_badge = QLabel(self._branch_text())
+        self._branch_badge.setAlignment(Qt.AlignCenter)
+        self._branch_badge.setStyleSheet(
+            "QLabel { font-size: 8pt; font-weight: bold; "
+            "background: transparent; padding: 2px; }"
+        )
+        self._update_branch_badge_color()
+        layout.addWidget(self._branch_badge)
+
+        # ── separator ────────────────────────────────────────────────────
+        sep2 = QWidget()
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet(theme.SEPARATOR_STYLE)
+        sep2.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(sep2)
+
+        # ── yes output port (green dot) ───────────────────────────────────
+        yes_row = PortRow(
+            port_name    = 'yes',
+            port_label   = 'YES  ✔',
+            direction    = 'output',
+            editor_type  = None,
+            editor_value = None,
+            editor       = False,
+            node_item_ref= None,
+            dot_color    = _YES_COLOR,
+        )
+        yes_row.port_clicked.connect(self._on_port_clicked)
+        yes_row._label.setStyleSheet(
+            "QLabel { font-size: 8pt; font-weight: bold; "
+            "color: #3cc870; background: transparent; }"
+        )
+        self.ports['yes'] = yes_row
+        layout.addWidget(yes_row)
+
+        # ── no output port (red dot) ──────────────────────────────────────
+        no_row = PortRow(
+            port_name    = 'no',
+            port_label   = 'NO  ✘',
+            direction    = 'output',
+            editor_type  = None,
+            editor_value = None,
+            editor       = False,
+            node_item_ref= None,
+            dot_color    = _NO_COLOR,
+        )
+        no_row.port_clicked.connect(self._on_port_clicked)
+        no_row._label.setStyleSheet(
+            "QLabel { font-size: 8pt; font-weight: bold; "
+            "color: #e05040; background: transparent; }"
+        )
+        self.ports['no'] = no_row
+        layout.addWidget(no_row)
+
+    # ------------------------------------------------------------------
+    # Branch badge helpers
+    # ------------------------------------------------------------------
+
+    def _branch_text(self) -> str:
+        is_true = bool(getattr(self.node, 'condition', 0.0))
+        return "▶  YES branch active" if is_true else "▶  NO branch active"
+
+    def _update_branch_badge_color(self):
+        is_true = bool(getattr(self.node, 'condition', 0.0))
+        color   = "#3cc870" if is_true else "#e05040"
+        self._branch_badge.setStyleSheet(
+            f"QLabel {{ font-size: 8pt; font-weight: bold; "
+            f"color: {color}; background: transparent; padding: 2px; }}"
+        )
+
+    # ------------------------------------------------------------------
+    # Override _apply_value to also refresh the branch badge
+    # ------------------------------------------------------------------
+
+    def _apply_value(self, port_name, value):
+        super()._apply_value(port_name, value)
+        if port_name == 'condition' and hasattr(self, '_branch_badge'):
+            self._branch_badge.setText(self._branch_text())
+            self._update_branch_badge_color()
+
+    # ------------------------------------------------------------------
+    # Override update_size: add overhang to the rect height
+    # ------------------------------------------------------------------
+
+    def update_size(self):
+        lay = self.container_widget.layout()
+        if lay:
+            lay.activate()
+
+        msh = self.container_widget.minimumSizeHint()
+        sh  = self.container_widget.sizeHint()
+
+        w = max(msh.width(),  sh.width()  if sh.width()  > 0 else 0) + 4
+        h = max(msh.height(), sh.height() if sh.height() > 0 else 0) + 4
+
+        # Expand the bounding rect upward to include the diamond overhang
+        total_h = h + self._DIAMOND_OVERHANG
+
+        self.setRect(0, 0, w, total_h)
+        self.container_widget.setFixedSize(w, h)
+        if hasattr(self, 'proxy'):
+            self.proxy.setPos(0, self._DIAMOND_OVERHANG)
+            self.proxy.setMinimumSize(w, h)
+            self.proxy.setMaximumSize(w, h)
+
+    # ------------------------------------------------------------------
+    # Override rename helpers to use "IF · name" format
+    # ------------------------------------------------------------------
+
+    def _finish_rename(self):
+        new_name = self._name_edit.text().strip()
+        self._name_edit.hide()
+        self._header_label.show()
+
+        if not new_name:
+            return
+
+        old_name = getattr(self, '_pending_rename_old', self.node.name)
+        if new_name == old_name:
+            return
+
+        sc = self.scene()
+        if sc and hasattr(sc, 'undo_stack'):
+            from .undo_stack import RenameNodeCommand
+            cmd = RenameNodeCommand(sc, self, old_name, new_name)
+            self.node.name = new_name
+            self._header_label.setText(f"IF  ·  {new_name}")
+            sc.undo_stack._stack = sc.undo_stack._stack[:sc.undo_stack._index + 1]
+            sc.undo_stack._stack.append(cmd)
+            sc.undo_stack._index = len(sc.undo_stack._stack) - 1
+            sc.request_preview_update()
+        else:
+            self.node.name = new_name
+            self._header_label.setText(f"IF  ·  {new_name}")
+
+        self.update_size()
+        if self.scene():
+            self.scene().request_preview_update()
+
+    # ------------------------------------------------------------------
+    # Paint — diamond header + standard body
+    # ------------------------------------------------------------------
+
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect()
+        sel  = self.isSelected()
+        w    = rect.width()
+        oh   = self._DIAMOND_OVERHANG   # diamond overhang above the body
+
+        # Body top starts at oh; header height is the label widget height
+        hh = self._header_widget.sizeHint().height()
+        if hh <= 0:
+            hh = 36
+        body_top = oh
+
+        # ── Drop shadow ────────────────────────────────────────────────
+        if not sel:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(SHADOW_COLOR))
+            painter.drawRoundedRect(
+                QRectF(3, oh + 3, w, rect.height() - oh),
+                6, 6
+            )
+
+        # ── Body (rounded rect below the diamond) ──────────────────────
+        border_pen = QPen(BORDER_SELECTED if sel else _IF_HEADER.lighter(160), 2)
+        painter.setPen(border_pen)
+        painter.setBrush(QBrush(BODY_BG))
+        painter.drawRoundedRect(
+            QRectF(0, body_top, w, rect.height() - body_top),
+            6, 6
+        )
+
+        # ── Header band inside the body (where the label sits) ─────────
+        header_color = _IF_HEADER.lighter(130) if sel else _IF_HEADER
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(header_color))
+        painter.drawRoundedRect(
+            QRectF(1, body_top + 1, w - 2, hh - 2),
+            5, 5
+        )
+        # Fill bottom corners of header so it blends with body
+        painter.drawRect(QRectF(1, body_top + hh - 8, w - 2, 9))
+
+        # Separator line between header and body ports
+        painter.setPen(QPen(border_pen.color().darker(110), 1))
+        painter.drawLine(int(1), body_top + hh, int(w - 1), body_top + hh)
+
+        # ── Diamond tip (protruding above the body) ────────────────────
+        cx = w / 2.0
+        diamond = QPolygonF([
+            QPointF(cx,       0),           # top tip
+            QPointF(cx + 18,  oh),          # right
+            QPointF(cx - 18,  oh),          # left
+        ])
+        diamond_body = QPolygonF([
+            QPointF(cx - 18,  oh),
+            QPointF(cx + 18,  oh),
+            QPointF(cx + 24,  oh + 14),
+            QPointF(cx - 24,  oh + 14),
+        ])
+
+        # Draw diamond fill
+        painter.setPen(QPen(border_pen.color(), 1.5))
+        painter.setBrush(QBrush(header_color))
+        painter.drawPolygon(diamond)
+        painter.drawPolygon(diamond_body)
+
+        # "IF" text inside the diamond tip
+        painter.setPen(QColor(240, 230, 130))
+        f = QFont()
+        f.setPointSizeF(7.5)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.drawText(
+            QRectF(cx - 12, 1, 24, oh - 1),
+            Qt.AlignHCenter | Qt.AlignVCenter,
+            "IF",
+        )
+
+        # ── Selection glow ─────────────────────────────────────────────
+        if sel:
+            painter.setPen(QPen(GLOW_COLOR, 8))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(
+                QRectF(-4, oh - 4, w + 8, rect.height() - oh + 8),
+                8, 8
+            )

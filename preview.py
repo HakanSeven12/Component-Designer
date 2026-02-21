@@ -1,16 +1,17 @@
 """
 Preview Module for Component Designer.
 
-Key design decisions
---------------------
-* Grid removed entirely.
-* Axes, surface lines, elevation arrows and offset arrows are drawn in
-  drawForeground() in *viewport* coordinates — so they always span the
-  full visible area regardless of pan / zoom.
-* Labels for target indicators are also drawn in the foreground so they
-  stay inside the viewport at all times.
-* Node geometry (points, links, text labels) still lives in scene
-  coordinates as QGraphicsItems, just as before.
+Data flow
+---------
+All node positions are already resolved by FlowchartScene.resolve_all_wires()
+before update_preview() is called.  The preview renderer's only job is to
+call create_preview_items() on each node in topological order and add the
+resulting QGraphicsItems to the scene.
+
+The shared ``point_positions`` dict maps node_id → (x, y) world coords and
+is populated incrementally during the render pass.  Nodes read it via the
+``_wire_ref_id`` / ``_wire_start_id`` / ``_wire_end_id`` attributes that the
+wire resolver stamps on them.
 """
 
 import traceback
@@ -27,6 +28,7 @@ from PySide2.QtGui   import (
 )
 
 from .models import PointNode, LinkNode
+from .models.workflow import DecisionNode
 from .base_graphics_view import BaseGraphicsView
 from .theme_dark import theme
 
@@ -50,10 +52,8 @@ _EDGE_MARGIN     = 6
 class PreviewTextItem(QGraphicsTextItem):
 
     def __init__(self, text, node,
-                 anchor_scene=None,
-                 offset_screen=None,
-                 base_font_size=BASE_FONT_NODE_LABEL,
-                 parent=None):
+                 anchor_scene=None, offset_screen=None,
+                 base_font_size=BASE_FONT_NODE_LABEL, parent=None):
         super().__init__(text, parent)
         self.node           = node
         self.anchor_scene   = anchor_scene  or QPointF(0, 0)
@@ -157,7 +157,6 @@ class PreviewLinkLine(QGraphicsLineItem):
         self.setFlags(QGraphicsItem.ItemIsSelectable)
         self.setData(0, node)
         self.setZValue(-1)
-
         pen = QPen(theme.DASHED_LINK_COLOR, 1)
         pen.setStyle(Qt.DashLine)
         pen.setDashPattern([4, 4])
@@ -195,21 +194,19 @@ class PreviewScene(QGraphicsScene):
 
 
 # ---------------------------------------------------------------------------
-# Viewport-space drawing helpers
+# Viewport helpers
 # ---------------------------------------------------------------------------
 
 def _draw_arrow_left(p, tip_x, tip_y, color, selected=False):
-    """Left-pointing arrow (←) with tip at (tip_x, tip_y) in viewport px."""
-    s  = _ARROW_HEAD
-    sh = _ARROW_SHAFT
+    s, sh = _ARROW_HEAD, _ARROW_SHAFT
     poly = QPolygonF([
-        QPointF(tip_x,           tip_y),
-        QPointF(tip_x + s,       tip_y - s * 0.6),
-        QPointF(tip_x + s,       tip_y - s * 0.25),
-        QPointF(tip_x + s + sh,  tip_y - s * 0.25),
-        QPointF(tip_x + s + sh,  tip_y + s * 0.25),
-        QPointF(tip_x + s,       tip_y + s * 0.25),
-        QPointF(tip_x + s,       tip_y + s * 0.6),
+        QPointF(tip_x,          tip_y),
+        QPointF(tip_x+s,        tip_y - s*0.6),
+        QPointF(tip_x+s,        tip_y - s*0.25),
+        QPointF(tip_x+s+sh,     tip_y - s*0.25),
+        QPointF(tip_x+s+sh,     tip_y + s*0.25),
+        QPointF(tip_x+s,        tip_y + s*0.25),
+        QPointF(tip_x+s,        tip_y + s*0.6),
     ])
     fill = color.lighter(170) if selected else color
     p.setPen(QPen(color.darker(140), 1.5))
@@ -218,17 +215,15 @@ def _draw_arrow_left(p, tip_x, tip_y, color, selected=False):
 
 
 def _draw_arrow_down(p, tip_x, tip_y, color, selected=False):
-    """Downward-pointing arrow (↓) with tip at (tip_x, tip_y) in viewport px."""
-    s  = _ARROW_HEAD
-    sh = _ARROW_SHAFT
+    s, sh = _ARROW_HEAD, _ARROW_SHAFT
     poly = QPolygonF([
-        QPointF(tip_x,             tip_y),
-        QPointF(tip_x - s * 0.6,   tip_y - s),
-        QPointF(tip_x - s * 0.25,  tip_y - s),
-        QPointF(tip_x - s * 0.25,  tip_y - s - sh),
-        QPointF(tip_x + s * 0.25,  tip_y - s - sh),
-        QPointF(tip_x + s * 0.25,  tip_y - s),
-        QPointF(tip_x + s * 0.6,   tip_y - s),
+        QPointF(tip_x,           tip_y),
+        QPointF(tip_x-s*0.6,     tip_y-s),
+        QPointF(tip_x-s*0.25,    tip_y-s),
+        QPointF(tip_x-s*0.25,    tip_y-s-sh),
+        QPointF(tip_x+s*0.25,    tip_y-s-sh),
+        QPointF(tip_x+s*0.25,    tip_y-s),
+        QPointF(tip_x+s*0.6,     tip_y-s),
     ])
     fill = color.lighter(170) if selected else color
     p.setPen(QPen(color.darker(140), 1.5))
@@ -237,28 +232,64 @@ def _draw_arrow_down(p, tip_x, tip_y, color, selected=False):
 
 
 def _draw_label(p, text, x, y, color, align_right=False, align_bottom=False):
-    """Small dark-background label clamped inside the viewport."""
     fm  = QFontMetrics(p.font())
     tw  = fm.horizontalAdvance(text)
     th  = fm.height()
     pad = 3
-
     vp  = p.viewport()
-    rx  = (x - tw - pad * 2) if align_right  else x
-    ry  = (y - th - pad)     if align_bottom else y
-    rx  = max(2.0, min(float(rx), vp.width()  - tw - pad * 2 - 2))
-    ry  = max(2.0, min(float(ry), vp.height() - th - pad - 2))
-
+    rx  = (x - tw - pad*2) if align_right  else x
+    ry  = (y - th - pad)   if align_bottom else y
+    rx  = max(2.0, min(float(rx), vp.width()  - tw - pad*2 - 2))
+    ry  = max(2.0, min(float(ry), vp.height() - th - pad  - 2))
     p.setPen(Qt.NoPen)
     p.setBrush(QBrush(QColor(18, 20, 26, 210)))
-    p.drawRoundedRect(QRectF(rx - pad, ry - pad, tw + pad*2, th + pad*2), 3, 3)
+    p.drawRoundedRect(QRectF(rx-pad, ry-pad, tw+pad*2, th+pad*2), 3, 3)
     p.setPen(color)
     p.setBrush(Qt.NoBrush)
-    p.drawText(QRectF(rx, ry, tw + 1, th + 1), Qt.AlignLeft | Qt.AlignTop, text)
+    p.drawText(QRectF(rx, ry, tw+1, th+1), Qt.AlignLeft | Qt.AlignTop, text)
 
 
 # ---------------------------------------------------------------------------
-# Main view class
+# Decision branch exclusion
+# ---------------------------------------------------------------------------
+
+def _build_excluded_set(flowchart_nodes: dict, connections: list) -> set:
+    """
+    Return the set of node IDs belonging to inactive Decision branches.
+    BFS from every inactive-branch output port, transitively.
+    """
+    adj: dict[str, list[tuple[str, str]]] = {nid: [] for nid in flowchart_nodes}
+    for conn in connections:
+        fid = conn.get('from')
+        tid = conn.get('to')
+        fp  = conn.get('from_port', '')
+        if fid in adj:
+            adj[fid].append((tid, fp))
+
+    excluded: set = set()
+    for node in flowchart_nodes.values():
+        if not isinstance(node, DecisionNode):
+            continue
+        active_port   = 'yes' if node.condition_is_true else 'no'
+        inactive_port = 'no'  if active_port == 'yes'   else 'yes'
+
+        queue = deque()
+        for to_id, fp in adj.get(node.id, []):
+            if fp == inactive_port and to_id not in excluded:
+                excluded.add(to_id)
+                queue.append(to_id)
+        while queue:
+            cur = queue.popleft()
+            for to_id, _ in adj.get(cur, []):
+                if to_id not in excluded:
+                    excluded.add(to_id)
+                    queue.append(to_id)
+
+    return excluded
+
+
+# ---------------------------------------------------------------------------
+# Main view
 # ---------------------------------------------------------------------------
 
 class GeometryPreview(BaseGraphicsView):
@@ -277,12 +308,10 @@ class GeometryPreview(BaseGraphicsView):
 
         self.points = []
         self.links  = []
-
         self._target_overlays = []
 
         self.setBackgroundBrush(QBrush(theme.PREVIEW_BG))
         self.setStyleSheet(theme.SCROLLBAR_STYLE)
-
         self.setup_scene()
         self._pscene.node_clicked.connect(self.on_node_clicked)
 
@@ -296,19 +325,16 @@ class GeometryPreview(BaseGraphicsView):
             self.horizontalScrollBar().setValue(
                 self.horizontalScrollBar().value() - event.angleDelta().y())
             return
-
         scene_pos = self.mapToScene(event.pos())
-        factor    = zoom_factor if event.angleDelta().y() > 0 else 1.0 / zoom_factor
+        factor    = zoom_factor if event.angleDelta().y() > 0 else 1.0/zoom_factor
         self._current_scale *= factor
         self.scale(factor, factor)
-
         new_vp = self.mapFromScene(scene_pos)
         delta  = new_vp - event.pos()
         self.horizontalScrollBar().setValue(
             self.horizontalScrollBar().value() + delta.x())
         self.verticalScrollBar().setValue(
             self.verticalScrollBar().value() + delta.y())
-
         self._rescale_text_items()
         event.accept()
 
@@ -337,7 +363,7 @@ class GeometryPreview(BaseGraphicsView):
         self.viewport().update()
 
     def setup_scene(self):
-        pass  # No grid, no static axes — all drawn in drawForeground
+        pass
 
     # ------------------------------------------------------------------
     # Coordinate helpers
@@ -347,27 +373,24 @@ class GeometryPreview(BaseGraphicsView):
         p = self.mapFromScene(QPointF(0.0, 0.0))
         return float(p.x()), float(p.y())
 
-    def _sy_to_vpy(self, scene_y: float) -> float:
+    def _sy_to_vpy(self, scene_y):
         return float(self.mapFromScene(QPointF(0.0, scene_y)).y())
 
-    def _sx_to_vpx(self, scene_x: float) -> float:
+    def _sx_to_vpx(self, scene_x):
         return float(self.mapFromScene(QPointF(scene_x, 0.0)).x())
 
     # ------------------------------------------------------------------
     # Foreground overlay
     # ------------------------------------------------------------------
 
-    def drawForeground(self, painter: QPainter, rect):
+    def drawForeground(self, painter, rect):
         super().drawForeground(painter, rect)
         painter.save()
         painter.resetTransform()
         painter.setRenderHint(QPainter.Antialiasing, True)
-
         vp_w = self.viewport().width()
         vp_h = self.viewport().height()
-
         self._draw_axes_fg(painter, vp_w, vp_h)
-
         for ov in self._target_overlays:
             t, val, name, sel = ov['type'], ov['value'], ov['name'], ov.get('selected', False)
             if t == 'surface':
@@ -376,15 +399,13 @@ class GeometryPreview(BaseGraphicsView):
                 self._draw_elevation_fg(painter, val, name, sel, vp_w, vp_h)
             elif t == 'offset':
                 self._draw_offset_fg(painter, val, name, sel, vp_w, vp_h)
-
         painter.restore()
 
     def _draw_axes_fg(self, p, vp_w, vp_h):
         ox, oy = self._origin_vp()
         pen = QPen(_AXIS_PEN_COLOR, _AXIS_PEN_WIDTH)
         pen.setCosmetic(True)
-        p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
+        p.setPen(pen); p.setBrush(Qt.NoBrush)
         p.drawLine(0, int(oy), vp_w, int(oy))
         p.drawLine(int(ox), 0, int(ox), vp_h)
 
@@ -393,95 +414,129 @@ class GeometryPreview(BaseGraphicsView):
         if vy < -2 or vy > vp_h + 2:
             return
         color = _SURFACE_COLOR.lighter(130) if selected else _SURFACE_COLOR
-        pen   = QPen(color, 2.0)
-        pen.setStyle(Qt.DashLine)
-        pen.setDashPattern(_SURFACE_DASH)
-        pen.setCosmetic(True)
+        pen   = QPen(color, 2.0); pen.setStyle(Qt.DashLine)
+        pen.setDashPattern(_SURFACE_DASH); pen.setCosmetic(True)
         p.setPen(pen)
         p.drawLine(0, int(vy), vp_w, int(vy))
-
         p.setFont(QFont("", 8, QFont.Bold))
         _draw_label(p, f"Surface: {name}  [{value:+.3f}]",
-                    x=_EDGE_MARGIN + 4, y=vy - 4,
-                    color=color, align_bottom=True)
+                    x=_EDGE_MARGIN+4, y=vy-4, color=color, align_bottom=True)
 
     def _draw_elevation_fg(self, p, value, name, selected, vp_w, vp_h):
-        vy     = self._sy_to_vpy(-value * self.scale_factor)
+        vy    = self._sy_to_vpy(-value * self.scale_factor)
         off_sc = vy < 0 or vy > vp_h
-        vy_c   = max(float(_EDGE_MARGIN + _ARROW_HEAD + _ARROW_SHAFT + 4),
-                     min(vy, float(vp_h - _EDGE_MARGIN - _ARROW_HEAD - _ARROW_SHAFT - 4)))
-
+        vy_c  = max(float(_EDGE_MARGIN+_ARROW_HEAD+_ARROW_SHAFT+4),
+                    min(vy, float(vp_h-_EDGE_MARGIN-_ARROW_HEAD-_ARROW_SHAFT-4)))
         color = _ELEV_COLOR.lighter(150) if selected else _ELEV_COLOR
         tip_x = float(vp_w) - _EDGE_MARGIN
         p.setFont(QFont("", 8))
         _draw_arrow_left(p, tip_x, vy_c, color, selected)
-
-        label = f"{'↕ ' if off_sc else ''}Elev: {name}  [{value:+.3f}]"
-        _draw_label(p, label,
-                    x=tip_x - _ARROW_SHAFT - _ARROW_HEAD - _LABEL_PAD, y=vy_c - 7,
+        _draw_label(p, f"{'↕ ' if off_sc else ''}Elev: {name}  [{value:+.3f}]",
+                    x=tip_x-_ARROW_SHAFT-_ARROW_HEAD-_LABEL_PAD, y=vy_c-7,
                     color=color, align_right=True)
 
     def _draw_offset_fg(self, p, value, name, selected, vp_w, vp_h):
-        vx     = self._sx_to_vpx(value * self.scale_factor)
+        vx    = self._sx_to_vpx(value * self.scale_factor)
         off_sc = vx < 0 or vx > vp_w
-        vx_c   = max(float(_EDGE_MARGIN + _ARROW_HEAD + _ARROW_SHAFT + 4),
-                     min(vx, float(vp_w - _EDGE_MARGIN - _ARROW_HEAD - _ARROW_SHAFT - 4)))
-
+        vx_c  = max(float(_EDGE_MARGIN+_ARROW_HEAD+_ARROW_SHAFT+4),
+                    min(vx, float(vp_w-_EDGE_MARGIN-_ARROW_HEAD-_ARROW_SHAFT-4)))
         color = _OFFSET_COLOR.lighter(150) if selected else _OFFSET_COLOR
-        tip_y = float(_EDGE_MARGIN + _ARROW_SHAFT + _ARROW_HEAD)
+        tip_y = float(_EDGE_MARGIN+_ARROW_SHAFT+_ARROW_HEAD)
         p.setFont(QFont("", 8))
         _draw_arrow_down(p, vx_c, tip_y, color, selected)
-
-        label = f"{'↔ ' if off_sc else ''}Offset: {name}  [{value:+.3f}]"
-        _draw_label(p, label,
-                    x=vx_c - 4, y=tip_y + _LABEL_PAD,
-                    color=color)
+        _draw_label(p, f"{'↔ ' if off_sc else ''}Offset: {name}  [{value:+.3f}]",
+                    x=vx_c-4, y=tip_y+_LABEL_PAD, color=color)
 
     # ------------------------------------------------------------------
-    # Topology sort
+    # Topological sort  (render order only — data already resolved)
     # ------------------------------------------------------------------
 
-    def topological_sort_nodes(self, flowchart_nodes):
+    def _topological_sort(self, flowchart_nodes, connections):
+        """
+        Sort nodes so that every node's inputs are rendered before its outputs.
+        Uses the wire connection list for ordering.
+        """
         in_degree = {nid: 0 for nid in flowchart_nodes}
-        adjacency = {nid: [] for nid in flowchart_nodes}
+        adj       = {nid: [] for nid in flowchart_nodes}
 
-        for node_id, node in flowchart_nodes.items():
-            if isinstance(node, PointNode):
-                if node.from_point and node.from_point in flowchart_nodes:
-                    in_degree[node_id] += 1
-                    adjacency[node.from_point].append(node_id)
-            elif isinstance(node, LinkNode):
-                if node.start_point and node.start_point in flowchart_nodes:
-                    in_degree[node_id] += 1
-                    adjacency[node.start_point].append(node_id)
-                if node.end_point and node.end_point in flowchart_nodes:
-                    in_degree[node_id] += 1
-                    adjacency[node.end_point].append(node_id)
+        for conn in connections:
+            f, t = conn.get('from'), conn.get('to')
+            if f in adj and t in in_degree:
+                adj[f].append(t)
+                in_degree[t] += 1
 
         queue = deque(nid for nid in flowchart_nodes if in_degree[nid] == 0)
-        sorted_nodes = []
+        order = []
         while queue:
             nid = queue.popleft()
-            sorted_nodes.append(flowchart_nodes[nid])
-            for dep in adjacency[nid]:
+            order.append(flowchart_nodes[nid])
+            for dep in adj[nid]:
                 in_degree[dep] -= 1
                 if in_degree[dep] == 0:
                     queue.append(dep)
 
-        if len(sorted_nodes) != len(flowchart_nodes):
-            print("Warning: Circular dependency detected in flowchart")
+        if len(order) != len(flowchart_nodes):
+            print("Warning: Circular dependency in flowchart")
             return list(flowchart_nodes.values())
-        return sorted_nodes
+        return order
 
     # ------------------------------------------------------------------
-    # Update
+    # Stamp wire IDs onto nodes so create_preview_items can look them up
     # ------------------------------------------------------------------
 
-    def update_preview(self, flowchart_nodes):
+    def _stamp_wire_ids(self, connections: list):
+        """
+        For each connection, store the upstream node ID on the downstream
+        node so that create_preview_items() can locate the correct upstream
+        position in point_positions without needing legacy ID fields.
+        """
+        for conn in connections:
+            from_id   = conn.get('from')
+            to_id     = conn.get('to')
+            from_port = conn.get('from_port', '')
+            to_port   = conn.get('to_port',   '')
+
+            # PointNode receiving a position on its 'reference' port
+            if to_port == 'reference':
+                node = self._nodes_ref.get(to_id)
+                if node:
+                    node._wire_ref_id = from_id
+
+            # LinkNode receiving positions on 'start' / 'end' ports
+            if to_port == 'start':
+                node = self._nodes_ref.get(to_id)
+                if node:
+                    node._wire_start_id = from_id
+            if to_port == 'end':
+                node = self._nodes_ref.get(to_id)
+                if node:
+                    node._wire_end_id = from_id
+
+    # ------------------------------------------------------------------
+    # Main update entry point
+    # ------------------------------------------------------------------
+
+    def update_preview(self, flowchart_nodes: dict, connections: list = None):
+        """
+        Rebuild all preview items.
+
+        Parameters
+        ----------
+        flowchart_nodes : dict[str, FlowchartNode]
+            All nodes in the scene.
+        connections : list[dict]
+            All wire connections (from scene.connections).
+        """
         from .models.targets import (SurfaceTargetNode,
                                      ElevationTargetNode,
                                      OffsetTargetNode)
 
+        conn_list = connections or []
+
+        # Store reference for _stamp_wire_ids
+        self._nodes_ref = flowchart_nodes
+
+        # Remove old preview items
         for item in list(self._pscene.items()):
             if _is_preview_node_item(item):
                 self._pscene.removeItem(item)
@@ -490,11 +545,21 @@ class GeometryPreview(BaseGraphicsView):
         self.links.clear()
         self._target_overlays.clear()
 
+        # Stamp wire source IDs onto nodes so create_preview_items can use them
+        self._stamp_wire_ids(conn_list)
+
+        # Determine inactive Decision branches
+        excluded = _build_excluded_set(flowchart_nodes, conn_list)
+
         selected_node   = getattr(self, 'selected_node', None)
-        point_positions = {}
-        sorted_nodes    = self.topological_sort_nodes(flowchart_nodes)
+        point_positions = {}   # node_id → (x, y) world coords, filled as we go
+
+        sorted_nodes = self._topological_sort(flowchart_nodes, conn_list)
 
         for node in sorted_nodes:
+            if node.id in excluded:
+                continue
+
             if isinstance(node, SurfaceTargetNode):
                 self._target_overlays.append({
                     'type': 'surface', 'value': node.preview_value,
@@ -512,6 +577,9 @@ class GeometryPreview(BaseGraphicsView):
                     'type': 'offset', 'value': node.preview_value,
                     'name': node.name, 'selected': node is selected_node,
                 })
+                continue
+
+            if isinstance(node, DecisionNode):
                 continue
 
             try:

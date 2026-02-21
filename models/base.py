@@ -1,34 +1,30 @@
 """
 Base classes and shared enums for Component Designer models.
 
+Unified port value system
+-------------------------
+Every node exposes get_port_value(name) and set_port_value(name, value).
+Wire connections are the ONLY data transport mechanism — there are no
+special-case node references (from_point, start_point, end_point) that
+bypass the wire system.
+
 Port definition format
 ----------------------
-Each port in get_input_ports() / get_output_ports() maps a port name to
-one of the following values:
-
   None
-      Node-ref port — no type, no editor, just a connection dot.
+      Generic connectable port — no type, no inline editor.
+      Can carry any Python value (tuple, node, float, …).
 
   'float' | 'int' | 'string' | 'bool' | 'percent'
-      Plain scalar string (legacy / shorthand).
-      Equivalent to {'type': 'float', 'editor': True}.
+      Scalar shorthand — renders an inline editor widget.
 
   {'type': 'float', 'editor': True}
-      Explicit dict form — preferred for new code.
-      'editor' key is optional and defaults to True.
+      Explicit dict form. 'editor' defaults to False when omitted.
 
   {'type': 'float', 'editor': False}
-      Port has a known type and can be wired, but no inline editor
-      widget is rendered.  The row shows dot + label only.
+      Connectable port with known type, no inline editor.
 
   [{'label': '...', 'value': ...}, ...]
-      Combo-box options list.  Rendered as a ComboField, not a PortRow.
-
-Convenience helpers
--------------------
-  port('float')                    → {'type': 'float', 'editor': True}
-  port('float', editor=False)      → {'type': 'float', 'editor': False}
-  unpack_port(any_form)            → (type_str_or_none, editor: bool)
+      Combo-box options list. Rendered as a ComboField.
 """
 
 from abc import ABC, abstractmethod
@@ -85,81 +81,45 @@ def _enum_options(enum_cls):
 # Port-definition helpers
 # ---------------------------------------------------------------------------
 
-#: Scalar type strings recognised by the editor factory in node.py.
 SCALAR_TYPES = frozenset(('float', 'int', 'string', 'bool', 'percent'))
 
 
 def port(ptype, editor=False):
     """
-    Convenience constructor that returns a port-definition dict.
+    Convenience constructor for a port-definition dict.
 
-    Prefer this over writing raw dicts so the call sites read naturally
-    and typos in key names are avoided:
-
-        'delta_x':  port('float')                 # spinbox shown (default)
-        'x':        port('float', editor=False)   # dot + label only
-        'add_link': port('bool',  editor=False)   # dot + label only
-
-    Parameters
-    ----------
-    ptype : str
-        One of the SCALAR_TYPES strings.
-    editor : bool
-        When False the inline editor widget is suppressed; the port row
-        still renders its dot and label so the port remains wireable.
-
-    Returns
-    -------
-    dict  {'type': ptype, 'editor': bool}
+        port('float')                → {'type': 'float', 'editor': False}
+        port('float', editor=True)   → {'type': 'float', 'editor': True}
     """
     return {'type': ptype, 'editor': bool(editor)}
 
 
 def unpack_port(port_def):
     """
-    Normalise any port definition to the canonical ``(type, editor)`` pair.
+    Normalise any port definition to (type_str_or_None, editor: bool).
 
-    Parameters
-    ----------
-    port_def : None | str | dict | list
-
-    Returns
-    -------
-    type_str : str | list | None
-    editor   : bool   — True when an inline editor widget should be shown
-
-    Conversion table
-    ----------------
     None                                → (None,   False)
-    'float'          (plain string)     → ('float', True)
-    {'type': 'float'}                   → ('float', True)   editor defaults True
-    {'type': 'float', 'editor': False}  → ('float', False)
-    [{'label':…, 'value':…}, …]        → (list,    False)   combo field
+    'float'                             → ('float', False)
+    {'type': 'float'}                   → ('float', False)
+    {'type': 'float', 'editor': True}   → ('float', True)
+    [{'label':…, 'value':…}, …]        → (list,    False)
     """
     if port_def is None:
         return None, False
-
     if isinstance(port_def, list):
-        # Combo-box options list — rendered as ComboField, not a PortRow editor
         return port_def, False
-
     if isinstance(port_def, dict):
-        ptype  = port_def.get('type', None)
-        editor = port_def.get('editor', False)
-        return ptype, bool(editor)
-
-    # Plain string shorthand: 'float', 'int', 'string', 'bool', 'percent'
+        return port_def.get('type', None), bool(port_def.get('editor', False))
+    # Plain string shorthand
     return port_def, False
 
 
 def port_type(port_def):
-    """Return the type string (or None / list) for *port_def*."""
     t, _ = unpack_port(port_def)
     return t
 
 
 def port_editor(port_def) -> bool:
-    """Return True when the port definition requests an inline editor."""
     _, ed = unpack_port(port_def)
     return ed
 
@@ -169,7 +129,21 @@ def port_editor(port_def) -> bool:
 # ---------------------------------------------------------------------------
 
 class FlowchartNode(ABC):
-    """Abstract base class for all flowchart nodes."""
+    """
+    Abstract base class for all flowchart nodes.
+
+    Data flow contract
+    ------------------
+    * get_port_value(name)      — return the current value for port *name*.
+                                  For output ports this usually means computing
+                                  a result on the fly.
+    * set_port_value(name, val) — accept an incoming value from a wire.
+                                  For input ports this stores the value so
+                                  get_port_value can use it later.
+
+    Nodes must NOT maintain hard-coded ID references to other nodes
+    (e.g. from_point, start_point).  All data travels via wires.
+    """
 
     def __init__(self, node_id, node_type, name=""):
         self.id         = node_id
@@ -180,11 +154,32 @@ class FlowchartNode(ABC):
         self.properties = {}
         self.next_nodes = []
 
+    # ------------------------------------------------------------------
+    # Port declarations  (override in subclasses)
+    # ------------------------------------------------------------------
+
     def get_input_ports(self) -> dict:
         return {}
 
     def get_output_ports(self) -> dict:
         return {}
+
+    # ------------------------------------------------------------------
+    # Unified value accessors  (override in subclasses)
+    # ------------------------------------------------------------------
+
+    def get_port_value(self, port_name):
+        """Return the current value for *port_name* (input or output)."""
+        return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        """Accept a value delivered by a wire into input port *port_name*."""
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
+
+    # ------------------------------------------------------------------
+    # Preview / display
+    # ------------------------------------------------------------------
 
     @abstractmethod
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
@@ -196,6 +191,10 @@ class FlowchartNode(ABC):
 
     def get_flowchart_display_text(self):
         return f"{self.type}\n{self.name}"
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
 
     def to_dict(self):
         return {

@@ -4,7 +4,7 @@ Workflow control nodes: StartNode, DecisionNode, VariableNode, GenericNode.
 
 from PySide2.QtGui import QColor
 
-from .base import FlowchartNode
+from .base import FlowchartNode, port
 
 
 class StartNode(FlowchartNode):
@@ -34,26 +34,84 @@ class StartNode(FlowchartNode):
 
 
 class DecisionNode(FlowchartNode):
-    """Branching node that evaluates a condition string."""
+    """
+    Branching node that evaluates a numeric/boolean condition.
+
+    Ports
+    -----
+    Inputs:
+        condition : float — any non-zero value is treated as True.
+                            Wire a math/input node here to drive branching.
+    Outputs:
+        yes : None (node-ref) — nodes connected here are rendered when
+                                condition != 0.
+        no  : None (node-ref) — nodes connected here are rendered when
+                                condition == 0 (or falsy).
+
+    The preview renderer inspects which output port a downstream node is
+    connected to and shows/hides it accordingly.
+    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Decision", name)
-        self.condition = ""
+        # Stores the evaluated numeric condition value (updated from wiring).
+        self.condition = 0.0
+
+    # ------------------------------------------------------------------
+    # Port declarations
+    # ------------------------------------------------------------------
 
     def get_input_ports(self) -> dict:
-        return {'condition': 'string'}
+        # 'condition' accepts a float value; an inline spinbox lets the user
+        # set a static value without wiring.
+        return {
+            'condition': port('float', editor=True),
+        }
 
     def get_output_ports(self) -> dict:
-        return {}
+        # Node-ref ports — downstream nodes connect to 'yes' or 'no'.
+        return {
+            'yes': None,
+            'no':  None,
+        }
+
+    # ------------------------------------------------------------------
+    # Value accessors (used by the connection resolver)
+    # ------------------------------------------------------------------
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
 
+    def set_port_value(self, port_name, value):
+        if port_name == 'condition':
+            try:
+                self.condition = float(value) if value is not None else 0.0
+            except (TypeError, ValueError):
+                self.condition = 0.0
+
+    # ------------------------------------------------------------------
+    # Convenience: evaluate condition as boolean
+    # ------------------------------------------------------------------
+
+    @property
+    def condition_is_true(self) -> bool:
+        """Return True when condition is non-zero."""
+        return bool(self.condition)
+
+    # ------------------------------------------------------------------
+    # Preview / theme
+    # ------------------------------------------------------------------
+
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
+        # Decision nodes themselves have no visual geometry in the preview.
         return []
 
     def get_preview_display_color(self):
         return QColor(255, 200, 100)
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
 
     def to_dict(self):
         d = super().to_dict()
@@ -65,7 +123,7 @@ class DecisionNode(FlowchartNode):
         node           = cls(data['id'], data['name'])
         node.x         = data.get('x', 0)
         node.y         = data.get('y', 0)
-        node.condition = data.get('condition', '')
+        node.condition = float(data.get('condition', 0.0))
         return node
 
 

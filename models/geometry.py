@@ -1,12 +1,31 @@
 """
 Geometry nodes: PointNode, LinkNode, ShapeNode.
 
-Port definition examples used here
-------------------------------------
-  port('float')                  → spinbox shown
-  port('float', editor=False)    → dot + label only, no spinbox
-  port('bool',  editor=False)    → dot + label only, no checkbox
-  None                           → node-ref port (wiring only)
+All data flows via wires — there are no hard-coded node-ID references.
+
+PointNode
+---------
+  Inputs:
+    reference   : None  — carries a (x, y) world-coord tuple from another
+                          PointNode's 'position' output port.
+    geometry_type, angle, delta_x, delta_y, distance, slope, point_codes,
+    add_link  — as before.
+  Outputs:
+    position : None  — (x, y) world-coord tuple, consumed by other nodes.
+    x, y     : float — individual components (read-only display).
+
+LinkNode
+--------
+  Inputs:
+    start : None — (x, y) tuple from a PointNode 'position' output.
+    end   : None — (x, y) tuple from a PointNode 'position' output.
+    link_codes : string
+  Outputs:
+    length : float
+    slope  : float
+
+The 'None' port type means "carries any Python object"; the wire still
+renders and connects normally.
 """
 
 import math
@@ -18,116 +37,193 @@ from .base import FlowchartNode, PointGeometryType, LinkType, _enum_options, por
 
 
 class PointNode(FlowchartNode):
-    """Represents a geometric point computed from a reference point."""
+    """
+    Geometric point whose world position is derived from an optional
+    upstream reference position plus geometry parameters.
+    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Point", name)
         self.geometry_type = PointGeometryType.DELTA_XY
-        self.angle         = 0.0
-        self.delta_x       = 0.0
-        self.delta_y       = 0.0
-        self.distance      = 0.0
-        self.slope         = 0.0
-        self.from_point    = None
-        self.point_codes   = []
-        self.add_link      = False
-        self.computed_x    = 0.0
-        self.computed_y    = 0.0
+
+        # Geometry parameters (editable via inline editors or wires)
+        self.angle    = 0.0
+        self.delta_x  = 0.0
+        self.delta_y  = 0.0
+        self.distance = 0.0
+        self.slope    = 0.0
+
+        # Received from upstream wire (reference port)
+        self._ref_pos: tuple = (0.0, 0.0)
+
+        self.point_codes = []
+        self.add_link    = False
+
+        # Computed outputs — updated by _compute()
+        self._pos_x = 0.0
+        self._pos_y = 0.0
+
+    # ------------------------------------------------------------------
+    # Port declarations
+    # ------------------------------------------------------------------
 
     def get_input_ports(self) -> dict:
         ports = {
-            'reference':     None,
+            'reference':     None,                         # receives (x,y) tuple
             'geometry_type': _enum_options(PointGeometryType),
-            # add_link is driven by wiring, not direct user input.
             'add_link':      port('bool', editor=False),
         }
         gt = self.geometry_type
         if gt == PointGeometryType.ANGLE_DELTA_X:
-            ports['angle']   = port('float')
-            ports['delta_x'] = port('float')
+            ports['angle']   = port('float', editor=False)
+            ports['delta_x'] = port('float', editor=False)
         elif gt == PointGeometryType.ANGLE_DELTA_Y:
-            ports['angle']   = port('float')
-            ports['delta_y'] = port('float')
+            ports['angle']   = port('float', editor=False)
+            ports['delta_y'] = port('float', editor=False)
         elif gt == PointGeometryType.ANGLE_DISTANCE:
-            ports['angle']    = port('float')
-            ports['distance'] = port('float')
+            ports['angle']    = port('float', editor=False)
+            ports['distance'] = port('float', editor=False)
         elif gt == PointGeometryType.DELTA_XY:
-            ports['delta_x'] = port('float')
-            ports['delta_y'] = port('float')
+            ports['delta_x'] = port('float', editor=False)
+            ports['delta_y'] = port('float', editor=False)
         elif gt == PointGeometryType.DELTA_X_SURFACE:
-            ports['delta_x'] = port('float')
+            ports['delta_x'] = port('float', editor=False)
         elif gt == PointGeometryType.SLOPE_DELTA_X:
-            ports['slope']   = port('float')
-            ports['delta_x'] = port('float')
+            ports['slope']   = port('float', editor=False)
+            ports['delta_x'] = port('float', editor=False)
         elif gt == PointGeometryType.SLOPE_DELTA_Y:
-            ports['slope']   = port('float')
-            ports['delta_y'] = port('float')
+            ports['slope']   = port('float', editor=False)
+            ports['delta_y'] = port('float', editor=False)
         elif gt == PointGeometryType.SLOPE_TO_SURFACE:
-            ports['slope'] = port('float')
-        ports['point_codes'] = port('string')
+            ports['slope'] = port('float', editor=False)
+        ports['point_codes'] = port('string', editor=False)
         return ports
 
     def get_output_ports(self) -> dict:
-        # x and y are computed read-outs — wireable but not inline-editable.
         return {
-            'vector': None,
-            'x':      port('float', editor=False),
-            'y':      port('float', editor=False),
+            'position': None,                    # (x, y) tuple — wire carries it
+            'x':        port('float', editor=False),
+            'y':        port('float', editor=False),
         }
 
-    def get_port_value(self, port_name):
-        return getattr(self, port_name, None)
+    # ------------------------------------------------------------------
+    # Value accessors
+    # ------------------------------------------------------------------
 
     def set_port_value(self, port_name, value):
-        if hasattr(self, port_name):
+        if port_name == 'reference':
+            # Upstream PointNode pushes its (x, y) position here
+            if isinstance(value, (tuple, list)) and len(value) >= 2:
+                self._ref_pos = (float(value[0]), float(value[1]))
+            else:
+                self._ref_pos = (0.0, 0.0)
+            self._compute()
+        elif port_name == 'geometry_type':
+            self.geometry_type = value
+            self._compute()
+        elif port_name in ('angle', 'delta_x', 'delta_y',
+                           'distance', 'slope'):
+            try:
+                setattr(self, port_name, float(value) if value is not None else 0.0)
+            except (TypeError, ValueError):
+                pass
+            self._compute()
+        elif port_name == 'point_codes':
+            if isinstance(value, str):
+                self.point_codes = [c.strip() for c in value.split(',') if c.strip()]
+            elif isinstance(value, list):
+                self.point_codes = value
+        elif port_name == 'add_link':
+            self.add_link = bool(value)
+        elif hasattr(self, port_name):
             setattr(self, port_name, value)
 
-    def compute_position(self, from_point_pos=None):
-        """Compute the (x, y) position relative to from_point_pos."""
-        gt   = self.geometry_type
-        base = from_point_pos or (0.0, 0.0)
+    def get_port_value(self, port_name):
+        if port_name == 'position':
+            self._compute()
+            return (self._pos_x, self._pos_y)
+        if port_name == 'x':
+            self._compute()
+            return self._pos_x
+        if port_name == 'y':
+            self._compute()
+            return self._pos_y
+        return getattr(self, port_name, None)
+
+    # ------------------------------------------------------------------
+    # Geometry computation
+    # ------------------------------------------------------------------
+
+    def _compute(self):
+        """Recompute (x, y) from the current reference position and params."""
+        bx, by = self._ref_pos
+        gt = self.geometry_type
 
         if gt == PointGeometryType.ANGLE_DELTA_X:
             rad = math.radians(self.angle)
-            self.computed_x = base[0] + self.delta_x * math.cos(rad)
-            self.computed_y = base[1] + self.delta_x * math.sin(rad)
+            self._pos_x = bx + self.delta_x * math.cos(rad)
+            self._pos_y = by + self.delta_x * math.sin(rad)
         elif gt == PointGeometryType.ANGLE_DELTA_Y:
             rad = math.radians(self.angle)
-            self.computed_x = base[0] - self.delta_y * math.sin(rad)
-            self.computed_y = base[1] + self.delta_y * math.cos(rad)
+            self._pos_x = bx - self.delta_y * math.sin(rad)
+            self._pos_y = by + self.delta_y * math.cos(rad)
         elif gt == PointGeometryType.ANGLE_DISTANCE:
             rad = math.radians(self.angle)
-            self.computed_x = base[0] + self.distance * math.cos(rad)
-            self.computed_y = base[1] + self.distance * math.sin(rad)
+            self._pos_x = bx + self.distance * math.cos(rad)
+            self._pos_y = by + self.distance * math.sin(rad)
         elif gt == PointGeometryType.DELTA_XY:
-            self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1] + self.delta_y
+            self._pos_x = bx + self.delta_x
+            self._pos_y = by + self.delta_y
         elif gt == PointGeometryType.DELTA_X_SURFACE:
-            self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1]
+            self._pos_x = bx + self.delta_x
+            self._pos_y = by
         elif gt == PointGeometryType.INTERPOLATE:
-            self.computed_x = base[0]
-            self.computed_y = base[1]
+            self._pos_x = bx
+            self._pos_y = by
         elif gt == PointGeometryType.SLOPE_DELTA_X:
             slope_ratio = self.slope / 100.0
-            self.computed_x = base[0] + self.delta_x
-            self.computed_y = base[1] + self.delta_x * slope_ratio
+            self._pos_x = bx + self.delta_x
+            self._pos_y = by + self.delta_x * slope_ratio
         elif gt == PointGeometryType.SLOPE_DELTA_Y:
             slope_ratio = self.slope / 100.0
             dx = self.delta_y / slope_ratio if slope_ratio != 0 else 0.0
-            self.computed_x = base[0] + dx
-            self.computed_y = base[1] + self.delta_y
+            self._pos_x = bx + dx
+            self._pos_y = by + self.delta_y
         elif gt == PointGeometryType.SLOPE_TO_SURFACE:
-            self.computed_x = base[0]
-            self.computed_y = base[1]
-        return (self.computed_x, self.computed_y)
+            self._pos_x = bx
+            self._pos_y = by
+        else:
+            self._pos_x = bx
+            self._pos_y = by
+
+    # Convenience for preview renderer (backwards compat)
+    @property
+    def computed_x(self):
+        self._compute()
+        return self._pos_x
+
+    @property
+    def computed_y(self):
+        self._compute()
+        return self._pos_y
+
+    # ------------------------------------------------------------------
+    # Preview
+    # ------------------------------------------------------------------
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         from ..preview import (PreviewPointItem, PreviewTextItem,
+                               PreviewLinkLine,
                                BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
-        from_pos = point_positions.get(self.from_point) if self.from_point else None
-        pos = self.compute_position(from_pos)
+        # Resolve reference position from the shared registry
+        # (populated by the topological render pass in preview.py)
+        ref_id = getattr(self, '_wire_ref_id', None)
+        if ref_id and ref_id in point_positions:
+            self._ref_pos = point_positions[ref_id]
+        self._compute()
+
+        pos = (self._pos_x, self._pos_y)
         point_positions[self.id] = pos
 
         x =  pos[0] * scale_factor
@@ -136,10 +232,10 @@ class PointNode(FlowchartNode):
 
         items = [PreviewPointItem(x, y, self)]
 
-        if self.add_link and self.from_point and from_pos is not None:
-            from ..preview import PreviewLinkLine
-            fx =  from_pos[0] * scale_factor
-            fy = -from_pos[1] * scale_factor
+        if self.add_link and ref_id and ref_id in point_positions:
+            ref = point_positions[ref_id]
+            fx =  ref[0] * scale_factor
+            fy = -ref[1] * scale_factor
             items.append(PreviewLinkLine(fx, fy, x, y, self))
 
         lbl = PreviewTextItem(self.name, self,
@@ -163,6 +259,10 @@ class PointNode(FlowchartNode):
     def get_preview_display_color(self):
         return QColor(0, 120, 255)
 
+    # ------------------------------------------------------------------
+    # Serialisation  (store params only, not computed state)
+    # ------------------------------------------------------------------
+
     def to_dict(self):
         d = super().to_dict()
         d.update({
@@ -172,7 +272,6 @@ class PointNode(FlowchartNode):
             'delta_y':       self.delta_y,
             'distance':      self.distance,
             'slope':         self.slope,
-            'from_point':    self.from_point,
             'point_codes':   self.point_codes,
             'add_link':      self.add_link,
         })
@@ -192,104 +291,205 @@ class PointNode(FlowchartNode):
         node.delta_y     = data.get('delta_y',  0.0)
         node.distance    = data.get('distance', 0.0)
         node.slope       = data.get('slope',    0.0)
-        node.from_point  = data.get('from_point')
         node.point_codes = data.get('point_codes', [])
-        node.add_link    = data.get('add_link', True)
+        node.add_link    = data.get('add_link', False)
+        # Legacy support: old files stored from_point as a node-id reference.
+        # We keep it only for the preview renderer's topology sort.
+        node._legacy_from_point = data.get('from_point')
         return node
 
 
 class LinkNode(FlowchartNode):
-    """Represents a geometric link (line/arc) between two points."""
+    """
+    Geometric link (line/arc) between two points.
+
+    Inputs:
+        start : None — receives (x, y) tuple from a PointNode 'position' output
+        end   : None — receives (x, y) tuple from a PointNode 'position' output
+        link_codes : string
+
+    Outputs:
+        length : float — Euclidean distance between start and end
+        slope  : float — rise/run as a percentage (Δy/Δx × 100)
+    """
 
     def __init__(self, node_id, name=""):
         super().__init__(node_id, "Link", name)
-        self.link_type       = LinkType.LINE
-        self.start_point     = None
-        self.end_point       = None
-        self.link_codes      = []
-        self.computed_length = 0.0
-        self.computed_slope  = 0.0
+        self.link_type  = LinkType.LINE
+        self.link_codes = []
+
+        # Positions received from upstream wires
+        self._start_pos: tuple = (0.0, 0.0)
+        self._end_pos:   tuple = (0.0, 0.0)
+        self._has_start  = False
+        self._has_end    = False
+
+        # Computed outputs
+        self._length = 0.0
+        self._slope  = 0.0
+
+    # ------------------------------------------------------------------
+    # Port declarations
+    # ------------------------------------------------------------------
 
     def get_input_ports(self) -> dict:
         return {
-            'start':      None,
-            'end':        None,
-            'link_codes': port('string'),
+            'start':      None,                    # (x, y) from PointNode
+            'end':        None,                    # (x, y) from PointNode
+            'link_codes': port('string', editor=False),
         }
 
     def get_output_ports(self) -> dict:
-        # Computed read-outs: wireable but no inline editor needed.
         return {
             'length': port('float', editor=False),
             'slope':  port('float', editor=False),
         }
 
-    def get_port_value(self, port_name):
-        return getattr(self, port_name, None)
+    # ------------------------------------------------------------------
+    # Value accessors
+    # ------------------------------------------------------------------
 
     def set_port_value(self, port_name, value):
-        if hasattr(self, port_name):
+        if port_name == 'start':
+            if isinstance(value, (tuple, list)) and len(value) >= 2:
+                self._start_pos = (float(value[0]), float(value[1]))
+                self._has_start = True
+            self._compute()
+        elif port_name == 'end':
+            if isinstance(value, (tuple, list)) and len(value) >= 2:
+                self._end_pos = (float(value[0]), float(value[1]))
+                self._has_end = True
+            self._compute()
+        elif port_name == 'link_codes':
+            if isinstance(value, str):
+                self.link_codes = [c.strip() for c in value.split(',') if c.strip()]
+            elif isinstance(value, list):
+                self.link_codes = value
+        elif hasattr(self, port_name):
             setattr(self, port_name, value)
 
-    def compute_geometry(self, start_pos=None, end_pos=None):
-        """Compute length and slope from start/end positions."""
-        if start_pos and end_pos:
-            dx = end_pos[0] - start_pos[0]
-            dy = end_pos[1] - start_pos[1]
-            self.computed_length = (dx**2 + dy**2) ** 0.5
-            self.computed_slope  = (dy / dx * 100.0) if dx != 0 else 0.0
+    def get_port_value(self, port_name):
+        if port_name == 'length':
+            self._compute()
+            return self._length
+        if port_name == 'slope':
+            self._compute()
+            return self._slope
+        return getattr(self, port_name, None)
+
+    # ------------------------------------------------------------------
+    # Geometry computation
+    # ------------------------------------------------------------------
+
+    def _compute(self):
+        if self._has_start and self._has_end:
+            dx = self._end_pos[0] - self._start_pos[0]
+            dy = self._end_pos[1] - self._start_pos[1]
+            self._length = math.hypot(dx, dy)
+            self._slope  = (dy / dx * 100.0) if dx != 0 else 0.0
         else:
-            self.computed_length = 0.0
-            self.computed_slope  = 0.0
+            self._length = 0.0
+            self._slope  = 0.0
+
+    # Backwards-compat properties used by old preview/resolve code
+    @property
+    def computed_length(self):
+        self._compute()
+        return self._length
+
+    @property
+    def computed_slope(self):
+        self._compute()
+        return self._slope
+
+    # ------------------------------------------------------------------
+    # Preview
+    # ------------------------------------------------------------------
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         from ..preview import (PreviewLineItem, PreviewTextItem,
                                BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
+
+        # Resolve start/end from the shared point_positions registry
+        # populated by the topological render pass in preview.py.
+        start_id = getattr(self, '_wire_start_id', None)
+        end_id   = getattr(self, '_wire_end_id',   None)
+
+        sp = point_positions.get(start_id) if start_id else None
+        ep = point_positions.get(end_id)   if end_id   else None
+
+        # Also accept positions delivered by wire resolver
+        if sp is None and self._has_start:
+            sp = self._start_pos
+        if ep is None and self._has_end:
+            ep = self._end_pos
+
+        if sp:
+            self._start_pos = sp
+            self._has_start = True
+        if ep:
+            self._end_pos = ep
+            self._has_end = True
+
+        self._compute()
+
         items = []
-        if self.start_point and self.end_point:
-            sp = point_positions.get(self.start_point)
-            ep = point_positions.get(self.end_point)
-            if sp and ep:
-                self.compute_geometry(sp, ep)
-                x1, y1 = sp[0] * scale_factor, -sp[1] * scale_factor
-                x2, y2 = ep[0] * scale_factor, -ep[1] * scale_factor
-                items.append(PreviewLineItem(x1, y1, x2, y2, self))
-                mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-                anchor = QPointF(mx, my)
-                t = PreviewTextItem(self.name, self,
-                                    anchor_scene=anchor,
-                                    offset_screen=QPointF(0, -30),
-                                    base_font_size=BASE_FONT_NODE_LABEL)
-                f = t.font(); f.setBold(True); t.setFont(f)
-                t.setDefaultTextColor(QColor(0, 100, 0))
-                items.append(t)
-                if show_codes and self.link_codes:
-                    ct = PreviewTextItem(f"[{','.join(self.link_codes)}]", self,
-                                        anchor_scene=anchor,
-                                        offset_screen=QPointF(0, -15),
-                                        base_font_size=BASE_FONT_CODE_LABEL)
-                    ct.setDefaultTextColor(QColor(0, 150, 0))
-                    items.append(ct)
+        if sp and ep:
+            x1, y1 = sp[0] * scale_factor, -sp[1] * scale_factor
+            x2, y2 = ep[0] * scale_factor, -ep[1] * scale_factor
+            items.append(PreviewLineItem(x1, y1, x2, y2, self))
+
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            anchor = QPointF(mx, my)
+
+            t = PreviewTextItem(self.name, self,
+                                anchor_scene=anchor,
+                                offset_screen=QPointF(0, -30),
+                                base_font_size=BASE_FONT_NODE_LABEL)
+            f = t.font(); f.setBold(True); t.setFont(f)
+            t.setDefaultTextColor(QColor(0, 100, 0))
+            items.append(t)
+
+            info = PreviewTextItem(
+                f"L={self._length:.3f}  S={self._slope:.2f}%",
+                self,
+                anchor_scene=anchor,
+                offset_screen=QPointF(0, -16),
+                base_font_size=BASE_FONT_CODE_LABEL,
+            )
+            info.setDefaultTextColor(QColor(60, 140, 60))
+            items.append(info)
+
+            if show_codes and self.link_codes:
+                ct = PreviewTextItem(f"[{','.join(self.link_codes)}]", self,
+                                     anchor_scene=anchor,
+                                     offset_screen=QPointF(0, -4),
+                                     base_font_size=BASE_FONT_CODE_LABEL)
+                ct.setDefaultTextColor(QColor(0, 150, 0))
+                items.append(ct)
         return items
 
     def get_preview_display_color(self):
         return QColor(0, 150, 0)
 
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
     def to_dict(self):
         d = super().to_dict()
-        d.update({'start_point': self.start_point,
-                  'end_point':   self.end_point,
-                  'link_codes':  self.link_codes})
+        d.update({'link_codes': self.link_codes})
         return d
 
     @classmethod
     def from_dict(cls, data):
         node = cls(data['id'], data['name'])
-        node.x           = data.get('x', 0)
-        node.y           = data.get('y', 0)
-        node.start_point = data.get('start_point')
-        node.end_point   = data.get('end_point')
-        node.link_codes  = data.get('link_codes', [])
+        node.x          = data.get('x', 0)
+        node.y          = data.get('y', 0)
+        node.link_codes = data.get('link_codes', [])
+        # Legacy: old files stored start_point/end_point as node IDs.
+        node._legacy_start_point = data.get('start_point')
+        node._legacy_end_point   = data.get('end_point')
         return node
 
 
@@ -303,13 +503,17 @@ class ShapeNode(FlowchartNode):
         self.material    = "Asphalt"
 
     def get_input_ports(self) -> dict:
-        return {'material': port('string')}
+        return {'material': port('string', editor=True)}
 
     def get_output_ports(self) -> dict:
         return {}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
+
+    def set_port_value(self, port_name, value):
+        if hasattr(self, port_name):
+            setattr(self, port_name, value)
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
         return []
