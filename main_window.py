@@ -9,7 +9,7 @@ from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QApplication)
 from PySide2.QtCore import Qt
 
-from .flowchart import FlowchartNodeItem, FlowchartView, _TYPED_INPUT_TYPES
+from .flowchart import FlowchartNodeItem, FlowchartView, _TYPED_INPUT_TYPES, _prefix_for_type
 from .preview import GeometryPreview
 from .panels import ToolboxPanel
 from .models import create_node_from_dict
@@ -293,6 +293,7 @@ class ComponentDesigner(QMainWindow):
             self.flowchart.scene.connections.clear()
             self.flowchart.scene.port_wires.clear()
             self.flowchart.node_counter = 0
+            self.flowchart._type_counters.clear()
             self.preview.scene.clear()
             self.preview.setup_scene()
             self.flowchart.create_start_node()
@@ -344,6 +345,7 @@ class ComponentDesigner(QMainWindow):
             self.flowchart.scene.connections.clear()
             self.flowchart.scene.port_wires.clear()
             self.flowchart.node_counter = 0
+            self.flowchart._type_counters.clear()
 
             node_map = {}
             for node_data in data.get('nodes', []):
@@ -355,6 +357,7 @@ class ComponentDesigner(QMainWindow):
                 self.flowchart.scene.addItem(item)
                 node_map[node.id] = node
 
+                # Restore the global ID counter
                 if node.id.startswith('N'):
                     try:
                         num = int(node.id[1:])
@@ -362,6 +365,21 @@ class ComponentDesigner(QMainWindow):
                             self.flowchart.node_counter = num
                     except ValueError:
                         pass
+
+                # Restore per-type name counter by inspecting existing names.
+                # If the node name ends with digits that follow the expected
+                # prefix, bump the counter to at least that number so the next
+                # new node of the same type gets a higher suffix.
+                node_type = node.type
+                prefix    = _prefix_for_type(node_type)
+                name      = node.name or ""
+                if name.upper().startswith(prefix.upper()):
+                    suffix = name[len(prefix):]
+                    if suffix.isdigit():
+                        n = int(suffix)
+                        cur = self.flowchart._type_counters.get(node_type, 0)
+                        if n > cur:
+                            self.flowchart._type_counters[node_type] = n
 
             for conn in data.get('connections', []):
                 from_id   = conn['from']

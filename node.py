@@ -6,6 +6,7 @@ from PySide2.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
     QGraphicsProxyWidget, QGraphicsRectItem, QStyle, QSizePolicy,
+    QToolTip,
 )
 from PySide2.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen
@@ -30,6 +31,41 @@ EDITOR_STYLE          = theme.EDITOR_STYLE
 EDITOR_STYLE_DISABLED = theme.EDITOR_STYLE_DISABLED
 COMBO_STYLE           = theme.COMBO_STYLE
 LABEL_STYLE           = theme.LABEL_STYLE
+
+
+# ---------------------------------------------------------------------------
+# Tooltip stylesheet — dark card matching the node theme
+# ---------------------------------------------------------------------------
+_TOOLTIP_STYLE = """
+QToolTip {
+    background-color: #1a1d28;
+    color: #dce3f0;
+    border: 1px solid #5294e2;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 8pt;
+}
+"""
+
+
+def _format_port_value(value) -> str:
+    """
+    Return a compact, human-readable string for any port value.
+    Floats are shown with up to 6 significant digits (trailing zeros stripped).
+    """
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, float):
+        # Show up to 6 significant figures, no unnecessary trailing zeros
+        formatted = f"{value:.6g}"
+        return formatted
+    if isinstance(value, list):
+        if not value:
+            return "[ ]"
+        return "[" + ", ".join(str(v) for v in value) + "]"
+    return str(value)
 
 
 class PortDot(QWidget):
@@ -155,6 +191,55 @@ class PortRow(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.setCursor(Qt.PointingHandCursor)
 
+        # Enable Qt tooltip machinery on this widget
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_AlwaysShowToolTips)
+
+    # ------------------------------------------------------------------
+    # Tooltip helpers
+    # ------------------------------------------------------------------
+
+    def _get_current_value(self):
+        """
+        Resolve the current live value for this port from the node model.
+        For output ports, calls get_port_value() to get the computed result.
+        For input ports, reads the stored attribute directly.
+        """
+        if self.node_item_ref is None:
+            return None
+        node = self.node_item_ref.node
+        if self.direction == 'output':
+            if hasattr(node, 'get_port_value'):
+                return node.get_port_value(self.port_name)
+        else:
+            if hasattr(node, 'get_port_value'):
+                return node.get_port_value(self.port_name)
+            return getattr(node, self.port_name, None)
+        return None
+
+    def _build_tooltip(self) -> str:
+        """
+        Compose the tooltip string shown when hovering over this port row.
+        Format:
+            <port_label>
+            <direction> port
+            Value: <value>
+        """
+        value = self._get_current_value()
+        label = self._label.text()
+        dir_str = "Output" if self.direction == 'output' else "Input"
+
+        lines = [
+            f"<b>{label}</b>",
+            f"<span style='color:#8a98b0;'>{dir_str} port</span>",
+            f"Value: <b>{_format_port_value(value)}</b>",
+        ]
+        return "<br>".join(lines)
+
+    # ------------------------------------------------------------------
+    # Editor factory
+    # ------------------------------------------------------------------
+
     def _make_editor(self, etype, value):
         if etype == 'float':
             w = QDoubleSpinBox()
@@ -231,17 +316,46 @@ class PortRow(QWidget):
         )
         return self.node_item_ref.proxy.mapToScene(local)
 
+    # ------------------------------------------------------------------
+    # Mouse events
+    # ------------------------------------------------------------------
+
     def enterEvent(self, event):
         self._hovered = True
         self._dot.set_hovered(True)
         self.update()
+
+        # Clear the static toolTip string so Qt doesn't render its own plain
+        # version on top of our manually-placed rich-text balloon.
+        self.setToolTip("")
+
+        tooltip_html = self._build_tooltip()
+
+        # Inside a QGraphicsProxyWidget the widget has no real top-level window,
+        # so mapToGlobal() returns (0,0).  Walk up to the first QGraphicsView
+        # ancestor of the proxy and use its viewport to get screen coordinates.
+        global_pos = self._resolve_global_cursor_pos()
+        QToolTip.showText(global_pos, tooltip_html)
+
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         self._hovered = False
         self._dot.set_hovered(False)
         self.update()
+        QToolTip.hideText()
         super().leaveEvent(event)
+
+    def _resolve_global_cursor_pos(self):
+        """
+        Return the current cursor position in global (screen) coordinates.
+
+        QWidget.mapToGlobal() fails inside QGraphicsProxyWidget because the
+        widget is not a native window.  Instead we ask QCursor directly, which
+        always returns the correct screen position regardless of embedding.
+        """
+        from PySide2.QtGui import QCursor
+        return QCursor.pos()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -278,6 +392,11 @@ class FlowchartNodeItem(QGraphicsRectItem):
         self.container_widget = QWidget()
         self.container_widget.setAttribute(Qt.WA_TranslucentBackground)
         self.container_widget.setStyleSheet("background: transparent;")
+
+        # Apply tooltip stylesheet to the container so child QToolTips inherit it
+        self.container_widget.setStyleSheet(
+            "background: transparent;" + _TOOLTIP_STYLE
+        )
 
         root = QVBoxLayout()
         root.setContentsMargins(0, 0, 0, 0)

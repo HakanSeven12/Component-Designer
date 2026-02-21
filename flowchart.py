@@ -411,6 +411,81 @@ _TYPED_INPUT_TYPES = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Per-type abbreviation map
+# Each node type maps to a short prefix used in auto-generated names.
+# ---------------------------------------------------------------------------
+
+_TYPE_PREFIX: dict[str, str] = {
+    # Geometry
+    "Point": "P",
+    "Link":  "L",
+    "Shape": "SH",
+    # Workflow
+    "Start":    "ST",
+    "Decision": "D",
+    "Variable": "VAR",
+    # Parameters
+    "Input":  "IN",
+    "Output": "OUT",
+    # Targets
+    "Surface Target":   "SURF",
+    "Elevation Target": "ELEV",
+    "Offset Target":    "OFF",
+    # Typed inputs
+    "Integer Input":        "INT",
+    "Double Input":         "DBL",
+    "String Input":         "STR",
+    "Grade Input":          "GRD",
+    "Slope Input":          "SLP",
+    "Yes\\No Input":        "YN",
+    "Superelevation Input": "SE",
+    # Math — Arithmetic
+    "Add":      "ADD",
+    "Subtract": "SUB",
+    "Multiply": "MUL",
+    "Divide":   "DIV",
+    "Modulo":   "MOD",
+    "Power":    "POW",
+    # Math — Unary
+    "Abs":    "ABS",
+    "Negate": "NEG",
+    "Sqrt":   "SQRT",
+    "Ceil":   "CEIL",
+    "Floor":  "FLR",
+    "Round":  "RND",
+    # Math — Trigonometry
+    "Sin":   "SIN",
+    "Cos":   "COS",
+    "Tan":   "TAN",
+    "Asin":  "ASIN",
+    "Acos":  "ACOS",
+    "Atan":  "ATAN",
+    "Atan2": "AT2",
+    # Math — Logarithm / Exponential
+    "Ln":    "LN",
+    "Log10": "LOG",
+    "Exp":   "EXP",
+    # Math — Comparison
+    "Min":   "MIN",
+    "Max":   "MAX",
+    "Clamp": "CLM",
+    # Math — Utility
+    "Interpolate": "LERP",
+    "Map Range":   "MAP",
+}
+
+
+def _prefix_for_type(node_type: str) -> str:
+    """
+    Return the short prefix for *node_type*.
+    Falls back to initials of the type words (e.g. "Auxiliary Point" → "AP").
+    """
+    if node_type in _TYPE_PREFIX:
+        return _TYPE_PREFIX[node_type]
+    return "".join(w[0].upper() for w in node_type.split()) or "X"
+
+
 class FlowchartView(BaseGraphicsView):
 
     def __init__(self):
@@ -419,9 +494,15 @@ class FlowchartView(BaseGraphicsView):
         self.setScene(self.scene)
         self.setRenderHint(QPainter.Antialiasing)
         self.setAcceptDrops(True)
-        self.node_counter    = 0
-        self._clipboard_node = None
 
+        # Global counter still used for unique node IDs (N0001, N0002 …)
+        self.node_counter = 0
+
+        # Per-type counter: maps node_type → how many have been created so far.
+        # Used exclusively for the human-readable name suffix (P1, P2, ADD1 …).
+        self._type_counters: dict[str, int] = {}
+
+        self._clipboard_node = None
         self._drag_start_positions: dict = {}
 
         self.scene.node_selected.connect(self.on_node_selected)
@@ -551,6 +632,9 @@ class FlowchartView(BaseGraphicsView):
         data['x']  = src.x + 30
         data['y']  = src.y + 30
 
+        # Generate a per-type name for the pasted node
+        data['name'] = self._next_type_name(src.type)
+
         for ref in ('from_point', 'start_point', 'end_point'):
             if ref in data:
                 data[ref] = None
@@ -613,12 +697,27 @@ class FlowchartView(BaseGraphicsView):
             event.ignore()
 
     # ------------------------------------------------------------------
-    # ID / position helpers
+    # ID / name helpers
     # ------------------------------------------------------------------
 
-    def _next_id(self):
+    def _next_id(self) -> str:
+        """Return a new globally-unique node ID (e.g. 'N0003')."""
         self.node_counter += 1
         return f"N{self.node_counter:04d}"
+
+    def _next_type_name(self, node_type: str) -> str:
+        """
+        Return the next auto-generated human-readable name for *node_type*.
+
+        Each type has its own independent counter so you get:
+            P1, P2, P3  …  for Points
+            L1, L2      …  for Links
+            ADD1, ADD2  …  for Add nodes
+        instead of a single global sequence.
+        """
+        self._type_counters[node_type] = self._type_counters.get(node_type, 0) + 1
+        prefix = _prefix_for_type(node_type)
+        return f"{prefix}{self._type_counters[node_type]}"
 
     def _auto_pos(self):
         x = 50 + (self.node_counter * 160) % 640
@@ -628,11 +727,6 @@ class FlowchartView(BaseGraphicsView):
     # ------------------------------------------------------------------
     # Node creators
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _name_prefix(node_type: str, counter: int) -> str:
-        initials = "".join(w[0].upper() for w in node_type.split())
-        return f"{initials}{counter}"
 
     def _add_node(self, node, x, y):
         cmd = AddNodeCommand(self.scene, node, x, y)
@@ -650,14 +744,10 @@ class FlowchartView(BaseGraphicsView):
         if x is None or y is None:
             x, y = self._auto_pos()
 
-        node_id = self._next_id()
-        prefix  = self._name_prefix(node_type, self.node_counter)
+        node_id   = self._next_id()
+        node_name = self._next_type_name(node_type)
 
-        # 1. Known registry type → instantiate directly
-        node = create_node_from_type(node_type, node_id, prefix)
-
-        # create_node_from_type falls back to GenericNode for unknown types,
-        # so every string is handled — nothing extra needed.
+        node = create_node_from_type(node_type, node_id, node_name)
         return self._add_node(node, x, y)
 
     def get_next_node_id(self):
