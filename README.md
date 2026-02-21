@@ -1,1 +1,1 @@
-<img width="4096" height="2040" alt="resim" src="https://github.com/user-attachments/assets/1efbe2c0-4af0-49ad-b163-88736b42f266" />
+<img width="1920" height="1032" alt="resim" src="https://github.com/user-attachments/assets/c89f482a-27a9-4db8-aded-08b977b07d6a" />
