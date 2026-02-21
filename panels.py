@@ -66,6 +66,12 @@ _MATH_LOG          = ("Ln", "Log10", "Exp")
 _MATH_COMPARISON   = ("Min", "Max", "Clamp")
 _MATH_UTILITY      = ("Interpolate", "Map Range")
 
+# Logic node labels grouped by sub-category for toolbox display
+_LOGIC_BOOLEAN     = ("And", "Or", "Not", "Xor", "Nand", "Nor")
+_LOGIC_COMPARISON  = ("Equal", "Not Equal", "Greater", "Greater Equal",
+                      "Less", "Less Equal")
+_LOGIC_UTILITY     = ("If Else", "Switch", "All", "Any")
+
 
 class ToolboxPanel(QWidget):
 
@@ -141,6 +147,16 @@ class ToolboxPanel(QWidget):
         _add_subgroup(math_root, "Utility",      _MATH_UTILITY)
 
         self.tree.addTopLevelItem(math_root)
+
+        # ── Logic ────────────────────────────────────────────────────────────
+        logic_root = QTreeWidgetItem(["Logic"])
+        logic_root.setFlags(logic_root.flags() & ~Qt.ItemIsDragEnabled)
+
+        _add_subgroup(logic_root, "Boolean",    _LOGIC_BOOLEAN)
+        _add_subgroup(logic_root, "Comparison", _LOGIC_COMPARISON)
+        _add_subgroup(logic_root, "Utility",    _LOGIC_UTILITY)
+
+        self.tree.addTopLevelItem(logic_root)
 
         # ── Geometry ────────────────────────────────────────────────────────
         geometry = QTreeWidgetItem(["Geometry"])

@@ -473,6 +473,25 @@ _TYPE_PREFIX: dict[str, str] = {
     # Math — Utility
     "Interpolate": "LERP",
     "Map Range":   "MAP",
+    # Logic — Boolean
+    "And":  "AND",
+    "Or":   "OR",
+    "Not":  "NOT",
+    "Xor":  "XOR",
+    "Nand": "NAND",
+    "Nor":  "NOR",
+    # Logic — Comparison
+    "Equal":         "EQ",
+    "Not Equal":     "NEQ",
+    "Greater":       "GT",
+    "Greater Equal": "GTE",
+    "Less":          "LT",
+    "Less Equal":    "LTE",
+    # Logic — Utility
+    "If Else": "IF",
+    "Switch":  "SW",
+    "All":     "ALL",
+    "Any":     "ANY",
 }
 
 

@@ -61,6 +61,17 @@ from .math_nodes import (
     InterpolateNode, MapRangeNode,
 )
 
+# --- Logic nodes -------------------------------------------------------------
+from .logic_nodes import (
+    # Boolean
+    AndNode, OrNode, NotNode, XorNode, NandNode, NorNode,
+    # Comparison
+    EqualNode, NotEqualNode, GreaterNode, GreaterEqualNode,
+    LessNode, LessEqualNode,
+    # Utility
+    IfElseNode, SwitchNode, AllNode, AnyNode,
+)
+
 # --- Workflow ----------------------------------------------------------------
 from .workflow import (
     StartNode,
@@ -99,6 +110,11 @@ __all__ = [
     "LogNode", "Log10Node", "ExpNode",
     "MinNode", "MaxNode", "ClampNode",
     "InterpolateNode", "MapRangeNode",
+    # logic nodes
+    "AndNode", "OrNode", "NotNode", "XorNode", "NandNode", "NorNode",
+    "EqualNode", "NotEqualNode", "GreaterNode", "GreaterEqualNode",
+    "LessNode", "LessEqualNode",
+    "IfElseNode", "SwitchNode", "AllNode", "AnyNode",
     # workflow
     "StartNode", "DecisionNode", "VariableNode", "GenericNode",
     # registry

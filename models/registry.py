@@ -17,6 +17,12 @@ from .math_nodes   import (
     MinNode, MaxNode, ClampNode,
     InterpolateNode, MapRangeNode,
 )
+from .logic_nodes  import (
+    AndNode, OrNode, NotNode, XorNode, NandNode, NorNode,
+    EqualNode, NotEqualNode, GreaterNode, GreaterEqualNode,
+    LessNode, LessEqualNode,
+    IfElseNode, SwitchNode, AllNode, AnyNode,
+)
 
 
 # Maps the node's 'type' string to its class for serialization/deserialization.
@@ -78,6 +84,25 @@ NODE_REGISTRY = {
     # Math — Utility
     'Interpolate': InterpolateNode,
     'Map Range':   MapRangeNode,
+    # Logic — Boolean
+    'And':  AndNode,
+    'Or':   OrNode,
+    'Not':  NotNode,
+    'Xor':  XorNode,
+    'Nand': NandNode,
+    'Nor':  NorNode,
+    # Logic — Comparison
+    'Equal':         EqualNode,
+    'Not Equal':     NotEqualNode,
+    'Greater':       GreaterNode,
+    'Greater Equal': GreaterEqualNode,
+    'Less':          LessNode,
+    'Less Equal':    LessEqualNode,
+    # Logic — Utility
+    'If Else': IfElseNode,
+    'Switch':  SwitchNode,
+    'All':     AllNode,
+    'Any':     AnyNode,
 }
 
 
