@@ -2,11 +2,14 @@
 Main Window for Component Designer
 """
 import json
+import os
 import traceback
 from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QSplitter, QAction, QToolBar,
                                QFileDialog, QMessageBox, QComboBox, QCheckBox,
-                               QApplication)
+                               QApplication, QDialog)
+
+from .open_dialog import OpenComponentDialog
 from PySide2.QtCore import Qt
 
 from .flowchart import FlowchartNodeItem, FlowchartView, _prefix_for_type
@@ -296,10 +299,13 @@ class ComponentDesigner(QMainWindow):
             self.statusBar().showMessage("New component created")
 
     def open_file(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "Open JSON File", "", "JSON Files (*.json)")
-        if filename:
-            self.load_file(filename)
+        initial_dir = (os.path.dirname(self.current_file)
+                       if self.current_file else os.path.expanduser('~'))
+        dlg = OpenComponentDialog(self, initial_dir=initial_dir)
+        if dlg.exec_() == QDialog.Accepted:
+            path = dlg.selected_path()
+            if path:
+                self.load_file(path)
 
     def save_file(self):
         if self.current_file:
@@ -308,11 +314,14 @@ class ComponentDesigner(QMainWindow):
             self.save_file_as()
 
     def save_file_as(self):
+        initial_dir = (os.path.dirname(self.current_file)
+                       if self.current_file else os.path.expanduser('~'))
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Save As", "", "JSON Files (*.json)")
+            self, "Save Component As", initial_dir,
+            "Component Designer Files (*.cdj)")
         if filename:
-            if not filename.endswith('.json'):
-                filename += '.json'
+            if not filename.endswith('.cdj'):
+                filename += '.cdj'
             self.save_to_file(filename)
             self.current_file = filename
 
@@ -322,11 +331,77 @@ class ComponentDesigner(QMainWindow):
             data['nodes'].append(node.to_dict())
         data['connections'] = self.flowchart.scene.connections
 
+        # Embed thumbnail as base64 directly in the JSON
+        thumb_b64 = self._render_thumbnail_b64()
+        if thumb_b64:
+            data['thumbnail'] = thumb_b64
+
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         self.modified = False
         self.statusBar().showMessage(f"Saved: {filename}")
+
+    def _render_thumbnail_b64(self, size: int = 256) -> str | None:
+        """
+        Render the current preview scene into a PNG thumbnail and return it
+        as a base64-encoded data-URI string so it can be embedded directly
+        in the JSON file — no separate image file is written.
+
+        Returns
+        -------
+        str  — 'data:image/png;base64,<b64data>'
+        None — if rendering failed for any reason.
+        """
+        import base64
+        from PySide2.QtGui  import QImage, QPainter as _QPainter
+        from PySide2.QtCore import QRectF, QBuffer, QIODevice
+
+        try:
+            preview_scene = self.preview._pscene
+
+            # Bounding rect of all scene items; fall back to a default rect
+            items_rect = preview_scene.itemsBoundingRect()
+            if items_rect.isEmpty():
+                items_rect = QRectF(-50, -50, 100, 100)
+
+            # 8 % padding so nothing gets clipped at the edges
+            pad_x       = items_rect.width()  * 0.08
+            pad_y       = items_rect.height() * 0.08
+            source_rect = items_rect.adjusted(-pad_x, -pad_y, pad_x, pad_y)
+
+            # Square canvas filled with the preview background colour
+            img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+            img.fill(self.preview.backgroundBrush().color())
+
+            painter = _QPainter(img)
+            painter.setRenderHint(_QPainter.Antialiasing)
+
+            # Uniform scale, centred (letterbox)
+            src_w  = source_rect.width()  or 1.0
+            src_h  = source_rect.height() or 1.0
+            scale  = min(size / src_w, size / src_h)
+            tx     = (size - src_w * scale) / 2.0
+            ty     = (size - src_h * scale) / 2.0
+            painter.translate(tx, ty)
+            painter.scale(scale, scale)
+            preview_scene.render(
+                painter,
+                QRectF(0, 0, src_w, src_h),
+                source_rect,
+            )
+            painter.end()
+
+            # Encode PNG bytes → base64 string entirely in memory
+            buf = QBuffer()
+            buf.open(QIODevice.WriteOnly)
+            img.save(buf, "PNG")
+            b64 = base64.b64encode(bytes(buf.data())).decode('ascii')
+            return f"data:image/png;base64,{b64}"
+
+        except Exception as exc:
+            print(f"Thumbnail render failed: {exc}")
+            return None
 
     def load_file(self, filename):
         try:
