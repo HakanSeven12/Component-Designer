@@ -12,6 +12,7 @@ from PySide2.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
 from PySide2.QtGui import QPainter, QBrush, QColor, QPen
 
 from .theme_dark import theme
+from .models.base import unpack_port, SCALAR_TYPES
 
 INPUT_COLOR        = theme.INPUT_PORT_COLOR
 OUTPUT_COLOR       = theme.OUTPUT_PORT_COLOR
@@ -33,9 +34,6 @@ COMBO_STYLE           = theme.COMBO_STYLE
 LABEL_STYLE           = theme.LABEL_STYLE
 
 
-# ---------------------------------------------------------------------------
-# Tooltip stylesheet — dark card matching the node theme
-# ---------------------------------------------------------------------------
 _TOOLTIP_STYLE = """
 QToolTip {
     background-color: #1a1d28;
@@ -58,9 +56,7 @@ def _format_port_value(value) -> str:
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, float):
-        # Show up to 6 significant figures, no unnecessary trailing zeros
-        formatted = f"{value:.6g}"
-        return formatted
+        return f"{value:.6g}"
     if isinstance(value, list):
         if not value:
             return "[ ]"
@@ -138,12 +134,28 @@ class ComboField(QWidget):
 
 
 class PortRow(QWidget):
+    """
+    One row in the node body representing a single input or output port.
+
+    Parameters
+    ----------
+    editor_type : str or None
+        Scalar type string ('float', 'int', 'string', 'bool', 'percent').
+        When None, no editor is built regardless of the *editor* flag.
+    editor_value : any
+        Initial value passed to the editor widget.
+    editor : bool
+        When False the inline editor widget is suppressed even when
+        *editor_type* is set.  The row still renders dot + label so
+        the port remains connectable via wires.
+    """
 
     port_clicked  = Signal(object, str)
     value_changed = Signal(str,   object)
 
     def __init__(self, port_name, port_label, direction,
                  editor_type=None, editor_value=None,
+                 editor=True,
                  node_item_ref=None, parent=None):
         super().__init__(parent)
         self.port_name     = port_name
@@ -164,7 +176,8 @@ class PortRow(QWidget):
         self._label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self._label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-        self._editor = self._make_editor(editor_type, editor_value)
+        # Build the editor only when both type and flag allow it.
+        self._editor = self._make_editor(editor_type, editor_value) if editor else None
 
         row = QHBoxLayout()
         row.setContentsMargins(0, 1, 0, 1)
@@ -191,45 +204,26 @@ class PortRow(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.setCursor(Qt.PointingHandCursor)
 
-        # Enable Qt tooltip machinery on this widget
         self.setMouseTracking(True)
         self.setAttribute(Qt.WA_AlwaysShowToolTips)
 
     # ------------------------------------------------------------------
-    # Tooltip helpers
+    # Tooltip
     # ------------------------------------------------------------------
 
     def _get_current_value(self):
-        """
-        Resolve the current live value for this port from the node model.
-        For output ports, calls get_port_value() to get the computed result.
-        For input ports, reads the stored attribute directly.
-        """
         if self.node_item_ref is None:
             return None
         node = self.node_item_ref.node
-        if self.direction == 'output':
-            if hasattr(node, 'get_port_value'):
-                return node.get_port_value(self.port_name)
-        else:
-            if hasattr(node, 'get_port_value'):
-                return node.get_port_value(self.port_name)
-            return getattr(node, self.port_name, None)
-        return None
+        if hasattr(node, 'get_port_value'):
+            return node.get_port_value(self.port_name)
+        return getattr(node, self.port_name, None)
 
     def _build_tooltip(self) -> str:
-        """
-        Compose the tooltip string shown when hovering over this port row.
-        Format:
-            <port_label>
-            <direction> port
-            Value: <value>
-        """
-        value = self._get_current_value()
-        label = self._label.text()
+        value   = self._get_current_value()
+        label   = self._label.text()
         dir_str = "Output" if self.direction == 'output' else "Input"
-
-        lines = [
+        lines   = [
             f"<b>{label}</b>",
             f"<span style='color:#8a98b0;'>{dir_str} port</span>",
             f"Value: <b>{_format_port_value(value)}</b>",
@@ -324,19 +318,8 @@ class PortRow(QWidget):
         self._hovered = True
         self._dot.set_hovered(True)
         self.update()
-
-        # Clear the static toolTip string so Qt doesn't render its own plain
-        # version on top of our manually-placed rich-text balloon.
         self.setToolTip("")
-
-        tooltip_html = self._build_tooltip()
-
-        # Inside a QGraphicsProxyWidget the widget has no real top-level window,
-        # so mapToGlobal() returns (0,0).  Walk up to the first QGraphicsView
-        # ancestor of the proxy and use its viewport to get screen coordinates.
-        global_pos = self._resolve_global_cursor_pos()
-        QToolTip.showText(global_pos, tooltip_html)
-
+        QToolTip.showText(self._resolve_global_cursor_pos(), self._build_tooltip())
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -347,13 +330,6 @@ class PortRow(QWidget):
         super().leaveEvent(event)
 
     def _resolve_global_cursor_pos(self):
-        """
-        Return the current cursor position in global (screen) coordinates.
-
-        QWidget.mapToGlobal() fails inside QGraphicsProxyWidget because the
-        widget is not a native window.  Instead we ask QCursor directly, which
-        always returns the correct screen position regardless of embedding.
-        """
         from PySide2.QtGui import QCursor
         return QCursor.pos()
 
@@ -391,9 +367,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         self.container_widget = QWidget()
         self.container_widget.setAttribute(Qt.WA_TranslucentBackground)
-        self.container_widget.setStyleSheet("background: transparent;")
-
-        # Apply tooltip stylesheet to the container so child QToolTips inherit it
         self.container_widget.setStyleSheet(
             "background: transparent;" + _TOOLTIP_STYLE
         )
@@ -419,6 +392,10 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         self.update_size()
         self.setData(0, node)
+
+    # ------------------------------------------------------------------
+    # Build header
+    # ------------------------------------------------------------------
 
     def _build_header(self):
         w = QWidget()
@@ -448,6 +425,10 @@ class FlowchartNodeItem(QGraphicsRectItem):
         w.setLayout(lay)
         return w
 
+    # ------------------------------------------------------------------
+    # Build body
+    # ------------------------------------------------------------------
+
     def _build_body(self):
         w = QWidget()
         w.setAttribute(Qt.WA_TranslucentBackground)
@@ -470,11 +451,21 @@ class FlowchartNodeItem(QGraphicsRectItem):
         inputs  = self.node.get_input_ports()
         outputs = self.node.get_output_ports()
 
-        combo_inputs  = {n: t for n, t in inputs.items()  if isinstance(t, list)}
-        combo_outputs = {n: t for n, t in outputs.items() if isinstance(t, list)}
-        port_inputs   = {n: t for n, t in inputs.items()  if not isinstance(t, list)}
-        port_outputs  = {n: t for n, t in outputs.items() if not isinstance(t, list)}
+        # Separate combo (list) ports from scalar/ref ports.
+        # A port_def is a combo when its type resolves to a list.
+        def _is_combo(port_def):
+            if isinstance(port_def, list):
+                return True
+            if isinstance(port_def, dict) and isinstance(port_def.get('type'), list):
+                return True
+            return False
 
+        combo_inputs  = {n: d for n, d in inputs.items()  if _is_combo(d)}
+        combo_outputs = {n: d for n, d in outputs.items() if _is_combo(d)}
+        port_inputs   = {n: d for n, d in inputs.items()  if not _is_combo(d)}
+        port_outputs  = {n: d for n, d in outputs.items() if not _is_combo(d)}
+
+        # ── Combo section ────────────────────────────────────────────────
         all_combos = list(combo_inputs.items()) + list(combo_outputs.items())
         if all_combos:
             combo_section = QWidget()
@@ -483,10 +474,13 @@ class FlowchartNodeItem(QGraphicsRectItem):
             cslay = QVBoxLayout()
             cslay.setContentsMargins(4, 2, 4, 4)
             cslay.setSpacing(4)
-            for name, options in all_combos:
-                lbl = name.replace('_', ' ').title()
-                val = getattr(self.node, name, None)
-                cf  = ComboField(name, lbl, options, val)
+            for name, port_def in all_combos:
+                # Unwrap dict wrapper if present; raw list is also valid.
+                opts = (port_def.get('type') if isinstance(port_def, dict)
+                        else port_def)
+                lbl  = name.replace('_', ' ').title()
+                val  = getattr(self.node, name, None)
+                cf   = ComboField(name, lbl, opts, val)
                 cf.value_changed.connect(self._on_value_changed)
                 cslay.addWidget(cf)
             combo_section.setLayout(cslay)
@@ -498,28 +492,33 @@ class FlowchartNodeItem(QGraphicsRectItem):
             sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             layout.addWidget(sep)
 
-        def make_port_row(port_name, port_type, direction):
-            etype = port_type if port_type in ('float', 'int', 'string', 'bool', 'percent') else None
+        # ── Port row factory ─────────────────────────────────────────────
+        def make_port_row(port_name, port_def, direction):
+            ptype, show_editor = unpack_port(port_def)
 
-            if etype and hasattr(self.node, 'get_port_value'):
-                eval_ = self.node.get_port_value(port_name)
-            elif etype:
-                eval_ = getattr(self.node, port_name, None)
+            # Resolve current value for the editor widget.
+            if ptype in SCALAR_TYPES:
+                if hasattr(self.node, 'get_port_value'):
+                    eval_ = self.node.get_port_value(port_name)
+                else:
+                    eval_ = getattr(self.node, port_name, None)
             else:
                 eval_ = None
 
             if port_name in ('point_codes', 'link_codes') and isinstance(eval_, list):
                 eval_ = ', '.join(eval_)
 
-            lbl = 'Slope (%)' if port_name == 'slope' else port_name.replace('_', ' ').title()
+            lbl = ('Slope (%)' if port_name == 'slope'
+                   else port_name.replace('_', ' ').title())
 
             pr = PortRow(
-                port_name     = port_name,
-                port_label    = lbl,
-                direction     = direction,
-                editor_type   = etype,
-                editor_value  = eval_,
-                node_item_ref = None,
+                port_name    = port_name,
+                port_label   = lbl,
+                direction    = direction,
+                editor_type  = ptype if ptype in SCALAR_TYPES else None,
+                editor_value = eval_,
+                editor       = show_editor,   # ← dict 'editor' key wired through
+                node_item_ref= None,
             )
             pr.value_changed.connect(self._on_value_changed)
             pr.port_clicked.connect(self._on_port_clicked)
@@ -550,8 +549,8 @@ class FlowchartNodeItem(QGraphicsRectItem):
             in_lay = QVBoxLayout()
             in_lay.setContentsMargins(0, 0, 0, 0)
             in_lay.setSpacing(1)
-            for name, ptype in port_inputs.items():
-                pr = make_port_row(name, ptype, 'input')
+            for name, pdef in port_inputs.items():
+                pr = make_port_row(name, pdef, 'input')
                 pr.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
                 in_lay.addWidget(pr)
             in_lay.addStretch(1)
@@ -573,8 +572,8 @@ class FlowchartNodeItem(QGraphicsRectItem):
             out_lay = QVBoxLayout()
             out_lay.setContentsMargins(0, 0, 0, 0)
             out_lay.setSpacing(1)
-            for name, ptype in port_outputs.items():
-                pr = make_port_row(name, ptype, 'output')
+            for name, pdef in port_outputs.items():
+                pr = make_port_row(name, pdef, 'output')
                 pr.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
                 out_lay.addWidget(pr)
             out_lay.addStretch(1)
@@ -583,6 +582,10 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         columns.setLayout(col_lay)
         layout.addWidget(columns)
+
+    # ------------------------------------------------------------------
+    # Rebuild ports after structural change
+    # ------------------------------------------------------------------
 
     def rebuild_ports(self):
         self._body_widget.blockSignals(True)
@@ -618,11 +621,15 @@ class FlowchartNodeItem(QGraphicsRectItem):
         if self.scene():
             self.scene().handle_port_click(self, port_name)
 
+    # ------------------------------------------------------------------
+    # Value changes
+    # ------------------------------------------------------------------
+
     def _on_value_changed(self, port_name, value):
         node = self.node
 
         if port_name in ('point_codes', 'link_codes'):
-            old_raw = getattr(node, port_name, [])
+            old_raw   = getattr(node, port_name, [])
             old_value = ', '.join(old_raw) if isinstance(old_raw, list) else old_raw
         else:
             old_value = getattr(node, port_name, None)
@@ -635,9 +642,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
         if sc and hasattr(sc, 'undo_stack'):
             from .undo_stack import ChangeValueCommand
             cmd = ChangeValueCommand(sc, self, port_name, old_value, value)
-            sc.undo_stack._stack = sc.undo_stack._stack[
-                :sc.undo_stack._index + 1
-            ]
+            sc.undo_stack._stack = sc.undo_stack._stack[:sc.undo_stack._index + 1]
             sc.undo_stack._stack.append(cmd)
             sc.undo_stack._index = len(sc.undo_stack._stack) - 1
 
@@ -660,18 +665,17 @@ class FlowchartNodeItem(QGraphicsRectItem):
                 percent_row._editor.setValue(node.percent)
                 percent_row._editor.blockSignals(False)
 
-        structural_ports = (
-            'geometry_type',
-            'link_type',
-            'target_type',
-            'data_type',
-        )
+        structural_ports = ('geometry_type', 'link_type', 'target_type', 'data_type')
         if port_name in structural_ports:
             QTimer.singleShot(0, self.rebuild_ports)
             return
 
         if self.scene():
             self.scene().request_preview_update()
+
+    # ------------------------------------------------------------------
+    # Rename
+    # ------------------------------------------------------------------
 
     def edit_name(self):
         self._pending_rename_old = self.node.name
@@ -699,9 +703,7 @@ class FlowchartNodeItem(QGraphicsRectItem):
             cmd = RenameNodeCommand(sc, self, old_name, new_name)
             self.node.name = new_name
             self._header_label.setText(f"{self.node.type}  ·  {new_name}")
-            sc.undo_stack._stack = sc.undo_stack._stack[
-                :sc.undo_stack._index + 1
-            ]
+            sc.undo_stack._stack = sc.undo_stack._stack[:sc.undo_stack._index + 1]
             sc.undo_stack._stack.append(cmd)
             sc.undo_stack._index = len(sc.undo_stack._stack) - 1
             sc.request_preview_update()
@@ -712,6 +714,10 @@ class FlowchartNodeItem(QGraphicsRectItem):
         self.update_size()
         if self.scene():
             self.scene().request_preview_update()
+
+    # ------------------------------------------------------------------
+    # Size / paint
+    # ------------------------------------------------------------------
 
     def update_size(self):
         lay = self.container_widget.layout()

@@ -14,7 +14,7 @@ indicator position.
 """
 
 from PySide2.QtGui import QColor
-from .base import FlowchartNode
+from .base import FlowchartNode, port
 
 
 class SurfaceTargetNode(FlowchartNode):
@@ -31,7 +31,7 @@ class SurfaceTargetNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {"preview_value": "float"}
+        return {"preview_value": port("float", editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -74,7 +74,7 @@ class ElevationTargetNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {"preview_value": "float"}
+        return {"preview_value": port("float", editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -117,7 +117,7 @@ class OffsetTargetNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {"preview_value": "float"}
+        return {"preview_value": port("float", editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)

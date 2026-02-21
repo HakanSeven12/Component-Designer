@@ -6,7 +6,7 @@ GradeInputNode, SlopeInputNode, YesNoInputNode, SuperelevationInputNode.
 
 from PySide2.QtGui import QColor
 
-from .base import FlowchartNode
+from .base import FlowchartNode, port
 
 
 class IntegerInputNode(FlowchartNode):
@@ -20,7 +20,7 @@ class IntegerInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'value': 'int'}
+        return {'value': port('int', editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -60,7 +60,7 @@ class DoubleInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'value': 'float'}
+        return {'value': port('float', editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -100,7 +100,7 @@ class StringInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'value': 'string'}
+        return {'value': port('string', editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -143,7 +143,8 @@ class GradeInputNode(FlowchartNode):
         return (self.rise / self.run * 100.0) if self.run != 0.0 else 0.0
 
     def get_input_ports(self) -> dict:
-        return {'rise': 'float', 'run': 'float'}
+        return {'rise': port('float', editor=True),
+                'run': port('float', editor=True)}
 
     def get_output_ports(self) -> dict:
         return {'percent': 'percent'}
@@ -190,7 +191,7 @@ class SlopeInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'value': 'percent'}
+        return {'value': port('percent', editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -230,7 +231,7 @@ class YesNoInputNode(FlowchartNode):
         return {}
 
     def get_output_ports(self) -> dict:
-        return {'value': 'bool'}
+        return {'value': port('bool', editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -282,7 +283,7 @@ class SuperelevationInputNode(FlowchartNode):
         return {'lane': self._LANE_OPTIONS}
 
     def get_output_ports(self) -> dict:
-        return {'value': 'percent'}
+        return {'value': port('percent', editor=True)}
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)

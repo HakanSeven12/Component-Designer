@@ -1,5 +1,12 @@
 """
 Geometry nodes: PointNode, LinkNode, ShapeNode.
+
+Port definition examples used here
+------------------------------------
+  port('float')                  → spinbox shown
+  port('float', editor=False)    → dot + label only, no spinbox
+  port('bool',  editor=False)    → dot + label only, no checkbox
+  None                           → node-ref port (wiring only)
 """
 
 import math
@@ -7,7 +14,7 @@ import math
 from PySide2.QtCore import QPointF
 from PySide2.QtGui import QColor
 
-from .base import FlowchartNode, PointGeometryType, LinkType, _enum_options
+from .base import FlowchartNode, PointGeometryType, LinkType, _enum_options, port
 
 
 class PointNode(FlowchartNode):
@@ -31,36 +38,42 @@ class PointNode(FlowchartNode):
         ports = {
             'reference':     None,
             'geometry_type': _enum_options(PointGeometryType),
-            'add_link':      'bool',
+            # add_link is driven by wiring, not direct user input.
+            'add_link':      port('bool', editor=False),
         }
         gt = self.geometry_type
         if gt == PointGeometryType.ANGLE_DELTA_X:
-            ports['angle']   = 'float'
-            ports['delta_x'] = 'float'
+            ports['angle']   = port('float')
+            ports['delta_x'] = port('float')
         elif gt == PointGeometryType.ANGLE_DELTA_Y:
-            ports['angle']   = 'float'
-            ports['delta_y'] = 'float'
+            ports['angle']   = port('float')
+            ports['delta_y'] = port('float')
         elif gt == PointGeometryType.ANGLE_DISTANCE:
-            ports['angle']    = 'float'
-            ports['distance'] = 'float'
+            ports['angle']    = port('float')
+            ports['distance'] = port('float')
         elif gt == PointGeometryType.DELTA_XY:
-            ports['delta_x'] = 'float'
-            ports['delta_y'] = 'float'
+            ports['delta_x'] = port('float')
+            ports['delta_y'] = port('float')
         elif gt == PointGeometryType.DELTA_X_SURFACE:
-            ports['delta_x'] = 'float'
+            ports['delta_x'] = port('float')
         elif gt == PointGeometryType.SLOPE_DELTA_X:
-            ports['slope']   = 'float'
-            ports['delta_x'] = 'float'
+            ports['slope']   = port('float')
+            ports['delta_x'] = port('float')
         elif gt == PointGeometryType.SLOPE_DELTA_Y:
-            ports['slope']   = 'float'
-            ports['delta_y'] = 'float'
+            ports['slope']   = port('float')
+            ports['delta_y'] = port('float')
         elif gt == PointGeometryType.SLOPE_TO_SURFACE:
-            ports['slope'] = 'float'
-        ports['point_codes'] = 'string'
+            ports['slope'] = port('float')
+        ports['point_codes'] = port('string')
         return ports
 
     def get_output_ports(self) -> dict:
-        return {'vector': None, 'x': None, 'y': None}
+        # x and y are computed read-outs — wireable but not inline-editable.
+        return {
+            'vector': None,
+            'x':      port('float', editor=False),
+            'y':      port('float', editor=False),
+        }
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -198,10 +211,18 @@ class LinkNode(FlowchartNode):
         self.computed_slope  = 0.0
 
     def get_input_ports(self) -> dict:
-        return {'start': None, 'end': None, 'link_codes': 'string'}
+        return {
+            'start':      None,
+            'end':        None,
+            'link_codes': port('string'),
+        }
 
     def get_output_ports(self) -> dict:
-        return {'length': None, 'slope': None}
+        # Computed read-outs: wireable but no inline editor needed.
+        return {
+            'length': port('float', editor=False),
+            'slope':  port('float', editor=False),
+        }
 
     def get_port_value(self, port_name):
         return getattr(self, port_name, None)
@@ -282,7 +303,7 @@ class ShapeNode(FlowchartNode):
         self.material    = "Asphalt"
 
     def get_input_ports(self) -> dict:
-        return {'material': 'string'}
+        return {'material': port('string')}
 
     def get_output_ports(self) -> dict:
         return {}
