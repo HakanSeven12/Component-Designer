@@ -516,42 +516,11 @@ class ComponentDesigner(QMainWindow):
                         if n > cur:
                             self.flowchart._type_counters[node_type] = n
 
-            # ── Legacy migration: from_point / start_point / end_point ──
-            legacy_conns = []
-            for node in node_map.values():
-                fp = getattr(node, '_legacy_from_point', None)
-                if fp and fp in node_map:
-                    legacy_conns.append({
-                        'from': fp,   'from_port': 'position',
-                        'to':   node.id, 'to_port': 'reference',
-                    })
-                sp = getattr(node, '_legacy_start_point', None)
-                if sp and sp in node_map:
-                    legacy_conns.append({
-                        'from': sp,   'from_port': 'position',
-                        'to':   node.id, 'to_port': 'start',
-                    })
-                ep = getattr(node, '_legacy_end_point', None)
-                if ep and ep in node_map:
-                    legacy_conns.append({
-                        'from': ep,   'from_port': 'position',
-                        'to':   node.id, 'to_port': 'end',
-                    })
-
-            all_connections = data.get('connections', []) + legacy_conns
-            seen = set()
-            deduped = []
-            for conn in all_connections:
-                key = (conn['to'], conn.get('to_port', ''))
-                if key not in seen:
-                    seen.add(key)
-                    deduped.append(conn)
-
-            for conn in deduped:
+            for conn in data.get('connections', []):
                 from_id   = conn['from']
                 to_id     = conn['to']
-                from_port = conn.get('from_port', 'position')
-                to_port   = conn.get('to_port',   'reference')
+                from_port = conn['from_port']
+                to_port   = conn['to_port']
                 if from_id in node_map and to_id in node_map:
                     self.flowchart.scene.connect_nodes_with_wire(
                         node_map[from_id], node_map[to_id],

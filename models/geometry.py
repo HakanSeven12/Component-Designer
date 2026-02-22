@@ -112,7 +112,6 @@ class PointNode(FlowchartNode):
 
     def set_port_value(self, port_name, value):
         if port_name == 'reference':
-            # Upstream PointNode pushes its (x, y) position here
             if isinstance(value, (tuple, list)) and len(value) >= 2:
                 self._ref_pos = (float(value[0]), float(value[1]))
             else:
@@ -216,8 +215,6 @@ class PointNode(FlowchartNode):
                                PreviewLinkLine,
                                BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
-        # Resolve reference position from the shared registry
-        # (populated by the topological render pass in preview.py)
         ref_id = getattr(self, '_wire_ref_id', None)
         if ref_id and ref_id in point_positions:
             self._ref_pos = point_positions[ref_id]
@@ -260,7 +257,7 @@ class PointNode(FlowchartNode):
         return QColor(0, 120, 255)
 
     # ------------------------------------------------------------------
-    # Serialisation  (store params only, not computed state)
+    # Serialisation
     # ------------------------------------------------------------------
 
     def to_dict(self):
@@ -293,9 +290,6 @@ class PointNode(FlowchartNode):
         node.slope       = data.get('slope',    0.0)
         node.point_codes = data.get('point_codes', [])
         node.add_link    = data.get('add_link', False)
-        # Legacy support: old files stored from_point as a node-id reference.
-        # We keep it only for the preview renderer's topology sort.
-        node._legacy_from_point = data.get('from_point')
         return node
 
 
@@ -410,15 +404,12 @@ class LinkNode(FlowchartNode):
         from ..preview import (PreviewLineItem, PreviewTextItem,
                                BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
-        # Resolve start/end from the shared point_positions registry
-        # populated by the topological render pass in preview.py.
         start_id = getattr(self, '_wire_start_id', None)
         end_id   = getattr(self, '_wire_end_id',   None)
 
         sp = point_positions.get(start_id) if start_id else None
         ep = point_positions.get(end_id)   if end_id   else None
 
-        # Also accept positions delivered by wire resolver
         if sp is None and self._has_start:
             sp = self._start_pos
         if ep is None and self._has_end:
@@ -477,9 +468,6 @@ class LinkNode(FlowchartNode):
         node.x          = data.get('x', 0)
         node.y          = data.get('y', 0)
         node.link_codes = data.get('link_codes', [])
-        # Legacy: old files stored start_point/end_point as node IDs.
-        node._legacy_start_point = data.get('start_point')
-        node._legacy_end_point   = data.get('end_point')
         return node
 
 
