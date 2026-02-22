@@ -365,14 +365,52 @@ class ComponentDesigner(QMainWindow):
             if items_rect.isEmpty():
                 items_rect = QRectF(-50, -50, 100, 100)
 
-            # 8 % padding so nothing gets clipped at the edges
-            pad_x       = items_rect.width()  * 0.08
-            pad_y       = items_rect.height() * 0.08
-            source_rect = items_rect.adjusted(-pad_x, -pad_y, pad_x, pad_y)
-
             # Square canvas filled with the preview background colour
             img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
             img.fill(self.preview.backgroundBrush().color())
+
+            # Temporarily hide text items and axis/grid lines so only
+            # geometry (points, links) remains for bounding-rect calculation
+            from PySide2.QtWidgets import QGraphicsTextItem, QGraphicsLineItem
+            from PySide2.QtGui import QColor as _QColor
+
+            hide_items = []
+            geo_rects  = []
+
+            for item in preview_scene.items():
+                if isinstance(item, QGraphicsTextItem):
+                    hide_items.append(item)
+                elif isinstance(item, QGraphicsLineItem):
+                    # Axis lines are cosmetic (very long) — exclude them
+                    # from bounding rect but keep them visible in render
+                    pen_color = item.pen().color()
+                    # Axis pen colours defined in preview.py (_AXIS_PEN_COLOR)
+                    # They are typically grey/white with low saturation
+                    if item.pen().isCosmetic() or item.line().length() > 2000:
+                        hide_items.append(item)
+                    else:
+                        geo_rects.append(item.sceneBoundingRect())
+                else:
+                    geo_rects.append(item.sceneBoundingRect())
+
+            for hi in hide_items:
+                hi.setVisible(False)
+
+            # Build tight bounding rect from geometry items only
+            if geo_rects:
+                from PySide2.QtCore import QRectF as _QRectF
+                items_rect = geo_rects[0]
+                for r in geo_rects[1:]:
+                    items_rect = items_rect.united(r)
+            else:
+                items_rect = preview_scene.itemsBoundingRect()
+
+            if items_rect.isEmpty():
+                items_rect = QRectF(-50, -50, 100, 100)
+
+            pad_x       = max(items_rect.width()  * 0.15, 20)
+            pad_y       = max(items_rect.height() * 0.15, 20)
+            source_rect = items_rect.adjusted(-pad_x, -pad_y, pad_x, pad_y)
 
             painter = _QPainter(img)
             painter.setRenderHint(_QPainter.Antialiasing)
@@ -391,6 +429,10 @@ class ComponentDesigner(QMainWindow):
                 source_rect,
             )
             painter.end()
+
+            # Restore all hidden items
+            for hi in hide_items:
+                hi.setVisible(True)
 
             # Encode PNG bytes → base64 string entirely in memory
             buf = QBuffer()
