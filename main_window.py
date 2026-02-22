@@ -5,9 +5,9 @@ import json
 import os
 import traceback
 from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                               QLabel, QSplitter, QAction, QToolBar,
+                               QLabel, QAction, QToolBar,
                                QFileDialog, QMessageBox, QComboBox, QCheckBox,
-                               QApplication, QDialog)
+                               QApplication, QDialog, QDockWidget)
 
 from .open_dialog import OpenComponentDialog
 from PySide2.QtCore import Qt
@@ -17,6 +17,31 @@ from .preview import GeometryPreview
 from .panels import ToolboxPanel
 from .models import create_node_from_dict
 from .theme_dark import theme
+
+# Shared stylesheet applied to all QDockWidget title bars
+_DOCK_STYLE = """
+    QDockWidget {
+        color: #c8cdd8;
+        font-size: 9pt;
+        font-weight: bold;
+    }
+    QDockWidget::title {
+        background: #1a1d28;
+        padding: 4px 8px;
+        border-bottom: 1px solid #2a2e3e;
+    }
+    QDockWidget::close-button,
+    QDockWidget::float-button {
+        background: transparent;
+        border: none;
+        padding: 2px;
+    }
+    QDockWidget::close-button:hover,
+    QDockWidget::float-button:hover {
+        background: #2a3550;
+        border-radius: 3px;
+    }
+"""
 
 
 class ComponentDesigner(QMainWindow):
@@ -37,17 +62,7 @@ class ComponentDesigner(QMainWindow):
         self.showMaximized()
 
     def setup_ui(self):
-        central     = QWidget()
-        main_layout = QHBoxLayout()
-
-        left_splitter = QSplitter(Qt.Vertical)
-        self.toolbox  = ToolboxPanel()
-        left_splitter.addWidget(self.toolbox)
-        left_splitter.setSizes([300, 200])
-
-        center_splitter = QSplitter(Qt.Vertical)
-
-        # ── Flowchart panel ──────────────────────────────────────────────
+        # ── Central widget: Flowchart ────────────────────────────────────
         flowchart_container = QWidget()
         flowchart_layout    = QVBoxLayout()
         flowchart_label     = QLabel("Flowchart")
@@ -57,8 +72,18 @@ class ComponentDesigner(QMainWindow):
         flowchart_layout.addWidget(self.flowchart)
         flowchart_layout.setContentsMargins(0, 0, 0, 0)
         flowchart_container.setLayout(flowchart_layout)
+        self.setCentralWidget(flowchart_container)
 
-        # ── Preview panel ────────────────────────────────────────────────
+        # ── Dock: Toolbox (left) ─────────────────────────────────────────
+        self.toolbox = ToolboxPanel()
+        self.toolbox_dock = QDockWidget("Toolbox", self)
+        self.toolbox_dock.setObjectName("ToolboxDock")
+        self.toolbox_dock.setWidget(self.toolbox)
+        self.toolbox_dock.setAllowedAreas(
+            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.toolbox_dock)
+
+        # ── Dock: Preview (left, below toolbox) ──────────────────────────
         preview_container = QWidget()
         preview_layout    = QVBoxLayout()
         preview_header    = QHBoxLayout()
@@ -99,20 +124,20 @@ class ComponentDesigner(QMainWindow):
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_container.setLayout(preview_layout)
 
-        center_splitter.addWidget(flowchart_container)
-        center_splitter.addWidget(preview_container)
-        center_splitter.setSizes([400, 400])
+        self.preview_dock = QDockWidget("Preview", self)
+        self.preview_dock.setObjectName("PreviewDock")
+        self.preview_dock.setWidget(preview_container)
+        self.preview_dock.setAllowedAreas(
+            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea |
+            Qt.BottomDockWidgetArea)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.preview_dock)
 
-        main_splitter = QSplitter(Qt.Horizontal)
-        main_splitter.addWidget(left_splitter)
-        main_splitter.addWidget(center_splitter)
-        main_splitter.setSizes([250, 800])
+        # Stack toolbox above preview on the left side
+        self.splitDockWidget(self.toolbox_dock, self.preview_dock, Qt.Vertical)
 
-        main_layout.addWidget(main_splitter)
-        central.setLayout(main_layout)
-        self.setCentralWidget(central)
-
+        # Apply dock title-bar and global styles
         self.setStyleSheet(
+            _DOCK_STYLE +
             theme.MENUBAR_STYLE +
             theme.TOOLBAR_STYLE +
             theme.STATUSBAR_STYLE +
@@ -154,6 +179,12 @@ class ComponentDesigner(QMainWindow):
         self.about_action = QAction("About", self)
         self.about_action.triggered.connect(self.show_about)
 
+        # Dock visibility toggle actions (shown in View menu)
+        self.toggle_toolbox_action = self.toolbox_dock.toggleViewAction()
+        self.toggle_preview_action = self.preview_dock.toggleViewAction()
+        self.toggle_toolbox_action.setText("Show Toolbox")
+        self.toggle_preview_action.setText("Show Preview")
+
     def create_menus(self):
         menubar   = self.menuBar()
         file_menu = menubar.addMenu("File")
@@ -171,6 +202,9 @@ class ComponentDesigner(QMainWindow):
         edit_menu.aboutToShow.connect(self._refresh_edit_menu)
 
         view_menu = menubar.addMenu("View")
+        view_menu.addAction(self.toggle_toolbox_action)
+        view_menu.addAction(self.toggle_preview_action)
+        view_menu.addSeparator()
         view_menu.addAction(self.restore_layout_action)
 
         menubar.addMenu("Define")
@@ -279,6 +313,18 @@ class ComponentDesigner(QMainWindow):
         self.update_preview()
 
     # ------------------------------------------------------------------
+    # Layout persistence
+    # ------------------------------------------------------------------
+
+    def restore_default_layout(self):
+        """Restore docks to their default positions and sizes."""
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.toolbox_dock)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.preview_dock)
+        self.splitDockWidget(self.toolbox_dock, self.preview_dock, Qt.Vertical)
+        self.toolbox_dock.show()
+        self.preview_dock.show()
+
+    # ------------------------------------------------------------------
     # File operations
     # ------------------------------------------------------------------
 
@@ -331,7 +377,6 @@ class ComponentDesigner(QMainWindow):
             data['nodes'].append(node.to_dict())
         data['connections'] = self.flowchart.scene.connections
 
-        # Embed thumbnail as base64 directly in the JSON
         thumb_b64 = self._render_thumbnail_b64()
         if thumb_b64:
             data['thumbnail'] = thumb_b64
@@ -360,19 +405,14 @@ class ComponentDesigner(QMainWindow):
         try:
             preview_scene = self.preview._pscene
 
-            # Bounding rect of all scene items; fall back to a default rect
             items_rect = preview_scene.itemsBoundingRect()
             if items_rect.isEmpty():
                 items_rect = QRectF(-50, -50, 100, 100)
 
-            # Square canvas filled with the preview background colour
             img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
             img.fill(self.preview.backgroundBrush().color())
 
-            # Temporarily hide text items and axis/grid lines so only
-            # geometry (points, links) remains for bounding-rect calculation
             from PySide2.QtWidgets import QGraphicsTextItem, QGraphicsLineItem
-            from PySide2.QtGui import QColor as _QColor
 
             hide_items = []
             geo_rects  = []
@@ -381,11 +421,6 @@ class ComponentDesigner(QMainWindow):
                 if isinstance(item, QGraphicsTextItem):
                     hide_items.append(item)
                 elif isinstance(item, QGraphicsLineItem):
-                    # Axis lines are cosmetic (very long) — exclude them
-                    # from bounding rect but keep them visible in render
-                    pen_color = item.pen().color()
-                    # Axis pen colours defined in preview.py (_AXIS_PEN_COLOR)
-                    # They are typically grey/white with low saturation
                     if item.pen().isCosmetic() or item.line().length() > 2000:
                         hide_items.append(item)
                     else:
@@ -396,9 +431,7 @@ class ComponentDesigner(QMainWindow):
             for hi in hide_items:
                 hi.setVisible(False)
 
-            # Build tight bounding rect from geometry items only
             if geo_rects:
-                from PySide2.QtCore import QRectF as _QRectF
                 items_rect = geo_rects[0]
                 for r in geo_rects[1:]:
                     items_rect = items_rect.united(r)
@@ -415,7 +448,6 @@ class ComponentDesigner(QMainWindow):
             painter = _QPainter(img)
             painter.setRenderHint(_QPainter.Antialiasing)
 
-            # Uniform scale, centred (letterbox)
             src_w  = source_rect.width()  or 1.0
             src_h  = source_rect.height() or 1.0
             scale  = min(size / src_w, size / src_h)
@@ -430,11 +462,9 @@ class ComponentDesigner(QMainWindow):
             )
             painter.end()
 
-            # Restore all hidden items
             for hi in hide_items:
                 hi.setVisible(True)
 
-            # Encode PNG bytes → base64 string entirely in memory
             buf = QBuffer()
             buf.open(QIODevice.WriteOnly)
             img.save(buf, "PNG")
@@ -467,7 +497,6 @@ class ComponentDesigner(QMainWindow):
                 self.flowchart.scene.addItem(item)
                 node_map[node.id] = node
 
-                # Restore global ID counter
                 if node.id.startswith('N'):
                     try:
                         num = int(node.id[1:])
@@ -476,7 +505,6 @@ class ComponentDesigner(QMainWindow):
                     except ValueError:
                         pass
 
-                # Restore per-type name counter
                 node_type = node.type
                 prefix    = _prefix_for_type(node_type)
                 name      = node.name or ""
@@ -489,8 +517,6 @@ class ComponentDesigner(QMainWindow):
                             self.flowchart._type_counters[node_type] = n
 
             # ── Legacy migration: from_point / start_point / end_point ──
-            # Old JSON files stored node-ID references instead of wires.
-            # Convert them to proper connections so the wire system handles them.
             legacy_conns = []
             for node in node_map.values():
                 fp = getattr(node, '_legacy_from_point', None)
@@ -513,7 +539,6 @@ class ComponentDesigner(QMainWindow):
                     })
 
             all_connections = data.get('connections', []) + legacy_conns
-            # Deduplicate (to_id + to_port uniquely identifies an input)
             seen = set()
             deduped = []
             for conn in all_connections:
@@ -556,9 +581,6 @@ class ComponentDesigner(QMainWindow):
             elif reply == QMessageBox.Cancel:
                 return False
         return True
-
-    def restore_default_layout(self):
-        pass
 
     def show_about(self):
         QMessageBox.about(

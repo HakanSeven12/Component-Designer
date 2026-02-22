@@ -185,7 +185,13 @@ class ToolboxPanel(QWidget):
             workflow.addChild(child)
         self.tree.addTopLevelItem(workflow)
 
-        self.tree.expandAll()
+        # Top-level categories expanded, sub-groups collapsed
+        for i in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(i)
+            top.setExpanded(True)
+            for j in range(top.childCount()):
+                top.child(j).setExpanded(False)
+
         self.tree.itemDoubleClicked.connect(self._on_double_click)
 
         layout.addWidget(self.tree)
