@@ -450,16 +450,6 @@ class LinkNode(FlowchartNode):
             t.setDefaultTextColor(QColor(0, 100, 0))
             items.append(t)
 
-            info = PreviewTextItem(
-                f"L={self._length:.3f}  S={self._slope:.2f}%",
-                self,
-                anchor_scene=anchor,
-                offset_screen=QPointF(0, -16),
-                base_font_size=BASE_FONT_CODE_LABEL,
-            )
-            info.setDefaultTextColor(QColor(60, 140, 60))
-            items.append(info)
-
             if show_codes and self.link_codes:
                 ct = PreviewTextItem(f"[{','.join(self.link_codes)}]", self,
                                      anchor_scene=anchor,
