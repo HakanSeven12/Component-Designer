@@ -2,15 +2,15 @@
 Node Widgets for Flowchart
 """
 
-from PySide2.QtWidgets import (
+from PySide.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox, QCheckBox,
     QGraphicsProxyWidget, QGraphicsRectItem, QGraphicsPolygonItem,
     QStyle, QSizePolicy, QToolTip,
 )
-from PySide2.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
-from PySide2.QtGui import (
-    QPainter, QBrush, QColor, QPen, QPolygonF, QFont,
+from PySide.QtCore import Qt, Signal, QPointF, QSize, QTimer, QRectF
+from PySide.QtGui import (
+    QPainter, QBrush, QColor, QPen, QPolygonF, QFont, QCursor,
 )
 
 from .theme_dark import theme
@@ -343,7 +343,6 @@ class PortRow(QWidget):
         super().leaveEvent(event)
 
     def _resolve_global_cursor_pos(self):
-        from PySide2.QtGui import QCursor
         return QCursor.pos()
 
     def mousePressEvent(self, event):

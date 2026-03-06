@@ -4,14 +4,15 @@ Main Window for Component Designer
 import json
 import os
 import traceback
-from PySide2.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                               QLabel, QAction, QToolBar,
-                               QFileDialog, QMessageBox, QComboBox, QCheckBox,
-                               QApplication, QDialog, QDockWidget)
+import base64
+from PySide.QtCore import Qt, QRectF, QBuffer, QIODevice
+from PySide.QtGui  import QImage, QPainter
+from PySide.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                               QLabel, QAction, QToolBar, QFileDialog,
+                               QMessageBox, QComboBox, QCheckBox, QApplication,
+                               QDialog, QDockWidget,QGraphicsTextItem, QGraphicsLineItem)
 
 from .open_dialog import OpenComponentDialog
-from PySide2.QtCore import Qt
-
 from .flowchart import FlowchartNodeItem, FlowchartView, _prefix_for_type
 from .preview import GeometryPreview
 from .panels import ToolboxPanel
@@ -398,9 +399,6 @@ class ComponentDesigner(QMainWindow):
         str  — 'data:image/png;base64,<b64data>'
         None — if rendering failed for any reason.
         """
-        import base64
-        from PySide2.QtGui  import QImage, QPainter as _QPainter
-        from PySide2.QtCore import QRectF, QBuffer, QIODevice
 
         try:
             preview_scene = self.preview._pscene
@@ -412,7 +410,6 @@ class ComponentDesigner(QMainWindow):
             img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
             img.fill(self.preview.backgroundBrush().color())
 
-            from PySide2.QtWidgets import QGraphicsTextItem, QGraphicsLineItem
 
             hide_items = []
             geo_rects  = []
@@ -445,8 +442,8 @@ class ComponentDesigner(QMainWindow):
             pad_y       = max(items_rect.height() * 0.15, 20)
             source_rect = items_rect.adjusted(-pad_x, -pad_y, pad_x, pad_y)
 
-            painter = _QPainter(img)
-            painter.setRenderHint(_QPainter.Antialiasing)
+            painter = QPainter(img)
+            painter.setRenderHint(QPainter.Antialiasing)
 
             src_w  = source_rect.width()  or 1.0
             src_h  = source_rect.height() or 1.0

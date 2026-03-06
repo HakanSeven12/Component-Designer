@@ -2,7 +2,7 @@
 Parameter nodes: InputParameterNode, OutputParameterNode, TargetParameterNode.
 """
 
-from PySide2.QtGui import QColor
+from PySide.QtGui import QColor
 
 from .base import FlowchartNode, DataType, TargetType, _enum_options
 

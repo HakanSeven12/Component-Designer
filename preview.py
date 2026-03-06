@@ -17,13 +17,13 @@ wire resolver stamps on them.
 import traceback
 from collections import deque
 
-from PySide2.QtWidgets import (
+from PySide.QtWidgets import (
     QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsLineItem,
     QGraphicsPolygonItem, QGraphicsItem, QGraphicsTextItem,
 )
-from PySide2.QtCore  import Qt, QPointF, QRectF, Signal
-from PySide2.QtGui   import (
+from PySide.QtCore  import Qt, QPointF, QRectF, Signal
+from PySide.QtGui   import (
     QPainter, QBrush, QColor, QPen, QFont, QPolygonF, QFontMetrics,
 )
 

@@ -30,8 +30,8 @@ renders and connects normally.
 
 import math
 
-from PySide2.QtCore import QPointF
-from PySide2.QtGui import QColor
+from PySide.QtCore import QPointF
+from PySide.QtGui import QColor
 
 from .base import FlowchartNode, PointGeometryType, LinkType, _enum_options, port
 

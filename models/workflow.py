@@ -2,7 +2,7 @@
 Workflow control nodes: StartNode, DecisionNode, VariableNode, GenericNode.
 """
 
-from PySide2.QtGui import QColor
+from PySide.QtGui import QColor
 
 from .base import FlowchartNode, port
 

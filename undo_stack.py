@@ -17,6 +17,8 @@ ChangeValueCommand   – any port-editor value change (spinbox, lineedit, …)
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from PySide.QtWidgets import (QDoubleSpinBox, QSpinBox,
+                               QLineEdit, QCheckBox)
 
 if TYPE_CHECKING:
     from .flowchart import FlowchartScene
@@ -232,8 +234,6 @@ class ChangeValueCommand(Command):
 
     @staticmethod
     def _sync_editor(editor, value):
-        from PySide2.QtWidgets import (QDoubleSpinBox, QSpinBox,
-                                       QLineEdit, QCheckBox)
         editor.blockSignals(True)
         try:
             if isinstance(editor, (QDoubleSpinBox, QSpinBox)):

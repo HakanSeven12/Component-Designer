@@ -4,7 +4,7 @@ IntegerInputNode, DoubleInputNode, StringInputNode,
 GradeInputNode, SlopeInputNode, YesNoInputNode, SuperelevationInputNode.
 """
 
-from PySide2.QtGui import QColor
+from PySide.QtGui import QColor
 
 from .base import FlowchartNode, port
 

@@ -1,9 +1,9 @@
 """
 Base Graphics View with pan and zoom functionality
 """
-from PySide2.QtWidgets import QGraphicsView
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QMouseEvent
+from PySide.QtWidgets import QGraphicsView
+from PySide.QtCore import Qt
+from PySide.QtGui import QMouseEvent
 
 
 class BaseGraphicsView(QGraphicsView):

@@ -25,18 +25,18 @@ import json
 import os
 from datetime import datetime
 
-from PySide2.QtWidgets import (
+from PySide.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QSplitter,
     QTreeView, QListView, QLabel, QPushButton,
     QLineEdit, QFrame, QSizePolicy, QWidget,
     QToolButton, QAbstractItemView, QHeaderView,
     QFileSystemModel,
 )
-from PySide2.QtCore import (
+from PySide.QtCore import (
     Qt, QSize, QDir, QSortFilterProxyModel,
     QModelIndex, QFileInfo,
 )
-from PySide2.QtGui import QPixmap, QColor, QPainter, QFont, QIcon
+from PySide.QtGui import QPixmap, QColor, QPainter, QFont, QIcon
 
 from .theme_dark import theme
 

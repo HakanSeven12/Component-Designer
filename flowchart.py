@@ -16,9 +16,9 @@ This means ANY output port value (float, tuple, bool, …) can be delivered to
 ANY compatible input port purely through wires, with no special handling.
 """
 
-from PySide2.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
-from PySide2.QtCore import Qt, Signal, QPointF
-from PySide2.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
+from PySide.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
+from PySide.QtCore import Qt, Signal, QPointF
+from PySide.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
 
 from .models import *
 from .models.geometry import PointNode, LinkNode

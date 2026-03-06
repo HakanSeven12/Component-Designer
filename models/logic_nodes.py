@@ -12,7 +12,7 @@ Comparison: EqualNode, NotEqualNode, GreaterNode, GreaterEqualNode,
 Utility   : IfElseNode, SwitchNode, AllNode, AnyNode
 """
 
-from PySide2.QtGui import QColor
+from PySide.QtGui import QColor
 from .base import FlowchartNode, port
 
 

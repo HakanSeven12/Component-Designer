@@ -19,8 +19,8 @@ Usage
     theme.apply_palette(app)        # call once in main(), before show()
 """
 
-from PySide2.QtGui  import QColor, QPalette, QFont
-from PySide2.QtCore import Qt
+from PySide.QtGui  import QColor, QPalette, QFont
+from PySide.QtCore import Qt
 
 
 # ---------------------------------------------------------------------------

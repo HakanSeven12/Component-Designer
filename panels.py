@@ -1,10 +1,10 @@
 """
 Toolbox Panel for Component Designer
 """
-from PySide2.QtWidgets import (QWidget, QVBoxLayout, QApplication,
+from PySide.QtWidgets import (QWidget, QVBoxLayout, QApplication,
                                QTreeWidget, QTreeWidgetItem)
-from PySide2.QtCore import Qt, Signal, QMimeData
-from PySide2.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
+from PySide.QtCore import Qt, Signal, QMimeData
+from PySide.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
 from .theme_dark import theme
 

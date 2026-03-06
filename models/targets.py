@@ -13,7 +13,7 @@ Each node exposes a 'preview_value' output port whose value drives the
 indicator position.
 """
 
-from PySide2.QtGui import QColor
+from PySide.QtGui import QColor
 from .base import FlowchartNode, port
 
 
