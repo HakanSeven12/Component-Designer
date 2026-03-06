@@ -6,7 +6,7 @@ from PySide.QtWidgets import (QWidget, QVBoxLayout, QApplication,
 from PySide.QtCore import Qt, Signal, QMimeData
 from PySide.QtGui import QDrag, QPainter, QPixmap, QPen, QColor
 
-from .theme_dark import theme
+from ..utils.theme_dark import theme
 
 
 class DraggableTreeWidget(QTreeWidget):

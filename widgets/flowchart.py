@@ -20,13 +20,15 @@ from PySide.QtWidgets import QGraphicsScene, QGraphicsPathItem, QGraphicsView
 from PySide.QtCore import Qt, Signal, QPointF
 from PySide.QtGui import QPainter, QBrush, QColor, QPen, QPainterPath
 
-from .models import *
-from .models.geometry import PointNode, LinkNode
-from .models.workflow import DecisionNode
+from ..models import *
+from ..models.geometry import PointNode, LinkNode
+from ..models.workflow import DecisionNode
 from .base_graphics_view import BaseGraphicsView
 from .node import FlowchartNodeItem, DecisionNodeItem
-from .theme_dark import theme
-from .undo_stack import (
+from ..utils.theme_dark import theme
+from collections import deque
+from ..models import create_node_from_dict
+from ..utils.undo_stack import (
     UndoStack,
     AddNodeCommand,
     DeleteNodeCommand,
@@ -304,7 +306,6 @@ class FlowchartScene(QGraphicsScene):
                 adj[f].append(conn)
                 in_degree[t] += 1
 
-        from collections import deque
         queue  = deque(nid for nid in ids if in_degree[nid] == 0)
         order  = []
         while queue:
@@ -582,7 +583,6 @@ class FlowchartView(BaseGraphicsView):
         data['y']    = src.y + 30
         data['name'] = self._next_type_name(src.type)
 
-        from .models import create_node_from_dict
         new_node = create_node_from_dict(data)
 
         cmd = AddNodeCommand(self.scene, new_node, new_node.x, new_node.y)

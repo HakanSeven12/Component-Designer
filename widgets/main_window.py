@@ -16,8 +16,8 @@ from .open_dialog import OpenComponentDialog
 from .flowchart import FlowchartNodeItem, FlowchartView, _prefix_for_type
 from .preview import GeometryPreview
 from .panels import ToolboxPanel
-from .models import create_node_from_dict
-from .theme_dark import theme
+from ..models import create_node_from_dict
+from ..utils.theme_dark import theme
 
 # Shared stylesheet applied to all QDockWidget title bars
 _DOCK_STYLE = """

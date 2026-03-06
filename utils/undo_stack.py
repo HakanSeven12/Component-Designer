@@ -21,7 +21,7 @@ from PySide.QtWidgets import (QDoubleSpinBox, QSpinBox,
                                QLineEdit, QCheckBox)
 
 if TYPE_CHECKING:
-    from .flowchart import FlowchartScene
+    from ..widgets.flowchart import FlowchartScene
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +71,6 @@ class DeleteNodeCommand(Command):
     description = "Delete node"
 
     def __init__(self, scene: "FlowchartScene", item):
-        from .node import FlowchartNodeItem   # local import to avoid cycles
         self._scene = scene
         self._item  = item
         self._node  = item.node

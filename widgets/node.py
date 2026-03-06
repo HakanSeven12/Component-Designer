@@ -13,8 +13,11 @@ from PySide.QtGui import (
     QPainter, QBrush, QColor, QPen, QPolygonF, QFont, QCursor,
 )
 
-from .theme_dark import theme
-from .models.base import unpack_port, SCALAR_TYPES
+from ..utils.theme_dark import theme
+from ..models.base import unpack_port, SCALAR_TYPES
+from ..utils.undo_stack import (ChangeValueCommand, 
+                                RenameNodeCommand, 
+                                RenameNodeCommand)
 
 INPUT_COLOR        = theme.INPUT_PORT_COLOR
 OUTPUT_COLOR       = theme.OUTPUT_PORT_COLOR
@@ -654,7 +657,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         sc = self.scene()
         if sc and hasattr(sc, 'undo_stack'):
-            from .undo_stack import ChangeValueCommand
             cmd = ChangeValueCommand(sc, self, port_name, old_value, value)
             sc.undo_stack._stack = sc.undo_stack._stack[:sc.undo_stack._index + 1]
             sc.undo_stack._stack.append(cmd)
@@ -713,7 +715,6 @@ class FlowchartNodeItem(QGraphicsRectItem):
 
         sc = self.scene()
         if sc and hasattr(sc, 'undo_stack'):
-            from .undo_stack import RenameNodeCommand
             cmd = RenameNodeCommand(sc, self, old_name, new_name)
             self.node.name = new_name
             self._header_label.setText(f"{self.node.type}  ·  {new_name}")
@@ -1047,7 +1048,6 @@ class DecisionNodeItem(FlowchartNodeItem):
 
         sc = self.scene()
         if sc and hasattr(sc, 'undo_stack'):
-            from .undo_stack import RenameNodeCommand
             cmd = RenameNodeCommand(sc, self, old_name, new_name)
             self.node.name = new_name
             self._header_label.setText(f"IF  ·  {new_name}")

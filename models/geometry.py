@@ -32,6 +32,9 @@ import math
 
 from PySide.QtCore import QPointF
 from PySide.QtGui import QColor
+from ..widgets.preview import (PreviewPointItem, PreviewTextItem,
+                       PreviewLineItem, PreviewLinkLine,
+                       BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
 from .base import FlowchartNode, PointGeometryType, LinkType, _enum_options, port
 
@@ -211,9 +214,6 @@ class PointNode(FlowchartNode):
     # ------------------------------------------------------------------
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
-        from ..preview import (PreviewPointItem, PreviewTextItem,
-                               PreviewLinkLine,
-                               BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
         ref_id = getattr(self, '_wire_ref_id', None)
         if ref_id and ref_id in point_positions:
@@ -401,8 +401,6 @@ class LinkNode(FlowchartNode):
     # ------------------------------------------------------------------
 
     def create_preview_items(self, scene, scale_factor, show_codes, point_positions):
-        from ..preview import (PreviewLineItem, PreviewTextItem,
-                               BASE_FONT_NODE_LABEL, BASE_FONT_CODE_LABEL)
 
         start_id = getattr(self, '_wire_start_id', None)
         end_id   = getattr(self, '_wire_end_id',   None)

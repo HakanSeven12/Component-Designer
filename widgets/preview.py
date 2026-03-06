@@ -27,10 +27,13 @@ from PySide.QtGui   import (
     QPainter, QBrush, QColor, QPen, QFont, QPolygonF, QFontMetrics,
 )
 
-from .models import PointNode, LinkNode
-from .models.workflow import DecisionNode
+from ..models.workflow import DecisionNode
 from .base_graphics_view import BaseGraphicsView
-from .theme_dark import theme
+from ..utils.theme_dark import theme
+from ..models.targets import (SurfaceTargetNode,
+                             ElevationTargetNode,
+                             OffsetTargetNode)
+
 
 
 BASE_FONT_NODE_LABEL = 9
@@ -527,10 +530,6 @@ class GeometryPreview(BaseGraphicsView):
         connections : list[dict]
             All wire connections (from scene.connections).
         """
-        from .models.targets import (SurfaceTargetNode,
-                                     ElevationTargetNode,
-                                     OffsetTargetNode)
-
         conn_list = connections or []
 
         # Store reference for _stamp_wire_ids

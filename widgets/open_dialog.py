@@ -38,7 +38,7 @@ from PySide.QtCore import (
 )
 from PySide.QtGui import QPixmap, QColor, QPainter, QFont, QIcon
 
-from .theme_dark import theme
+from ..utils.theme_dark import theme
 
 
 # ---------------------------------------------------------------------------
