@@ -8,9 +8,12 @@ import base64
 from PySide.QtCore import Qt, QRectF, QBuffer, QIODevice
 from PySide.QtGui  import QImage, QPainter
 from PySide.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                               QLabel, QAction, QToolBar, QFileDialog,
+                               QLabel, QToolBar, QFileDialog,
                                QMessageBox, QComboBox, QCheckBox, QApplication,
                                QDialog, QDockWidget,QGraphicsTextItem, QGraphicsLineItem)
+
+try: from PySide.QtWidgets import QAction
+except: from PySide.QtGui import QAction
 
 from .open_dialog import OpenComponentDialog
 from .flowchart import FlowchartNodeItem, FlowchartView, _prefix_for_type
